@@ -169,7 +169,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
       clearTimeout(timer1)
       if (timer2) clearTimeout(timer2)
     }
-  }, [images, projects, colors])
+  }, [images.length, projects.length, colors.length])
 
   return (
     <>
@@ -291,7 +291,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
               <div className="about-content">
                 <div className="about-line-first">-</div>
                 <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
-                <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
+                <div className="about-line">The Crater (in Latin Crater, "cup") is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
                 <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
                 <div className="about-line">studio@cratere.studio M: +39 3208740367</div>
                 <div className="about-line">Viale Abruzzi 32</div>
