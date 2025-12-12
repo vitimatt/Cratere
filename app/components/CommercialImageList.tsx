@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { urlFor } from '../../lib/imageUrl'
-import { useDesigner } from '../contexts/DesignerContext'
 
 interface ImageItem {
   asset: any
@@ -17,6 +15,13 @@ interface Project {
   title: string
   client: string
   year: number
+  pdf?: {
+    asset?: {
+      _id?: string
+      url?: string
+      originalFilename?: string
+    }
+  }
   images: Array<{
     asset: any
     assetMetadata?: any
@@ -24,25 +29,20 @@ interface Project {
   }>
 }
 
-interface ImageListProps {
+interface CommercialImageListProps {
   images: ImageItem[]
   projects: Project[]
 }
 
-export default function ImageList({ images, projects }: ImageListProps) {
-  const router = useRouter()
-  const { selectionContext, setSelectedImage, setSelectionContext } = useDesigner()
+export default function CommercialImageList({ images, projects }: CommercialImageListProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
   const [hoveredProjectImageIndex, setHoveredProjectImageIndex] = useState<number | null>(null)
   const [hoveredColor, setHoveredColor] = useState<string | null>(null)
   const [hoveredRandomly, setHoveredRandomly] = useState<boolean>(false)
   const [randomImageIndex, setRandomImageIndex] = useState<number | null>(null)
-  const [expandedAbout, setExpandedAbout] = useState<boolean>(false)
   const [visibleRows, setVisibleRows] = useState<Set<string>>(new Set())
   const [isReady, setIsReady] = useState<boolean>(false)
-  
-  const isSelectionMode = selectionContext !== null
 
   useEffect(() => {
     // Mark as ready after a tiny delay to ensure styles are applied
@@ -133,71 +133,36 @@ export default function ImageList({ images, projects }: ImageListProps) {
     return colorImages[randomIndex]
   }
 
-  const handleImageSelect = (image: ImageItem | null) => {
-    if (!selectionContext) return
+  const getPdfUrl = (pdf: Project['pdf']): string | null => {
+    if (!pdf?.asset) return null
     
-    console.log('Storing image:', {
-      pageNumber: selectionContext.pageNumber,
-      slotId: selectionContext.slotId,
-      hasImage: !!image,
-      imageAsset: image?.asset?._ref || image?.asset?._id || 'none'
-    })
-    
-    setSelectedImage(selectionContext.pageNumber, selectionContext.slotId, image)
-    setSelectionContext(null)
-    
-    // Navigate back to the designer - for right-side slots, go to the left page of the spread
-    let targetPage = selectionContext.pageNumber
-    if (selectionContext.slotId.startsWith('right-')) {
-      // Right-side slots are on odd pages (3, 5, 7, etc.), go back to left page (2, 4, 6, etc.)
-      targetPage = selectionContext.pageNumber - 1
+    // If URL is directly available
+    if (pdf.asset.url) {
+      return pdf.asset.url
     }
-    router.push(`/designer?page=${targetPage}`)
+    
+    // Otherwise construct URL from asset ID
+    const assetId = pdf.asset._id
+    if (!assetId) return null
+    
+    // Sanity file URL format: https://cdn.sanity.io/files/{projectId}/{dataset}/{assetId}.pdf
+    // Remove the 'file-' prefix if present
+    const cleanAssetId = assetId.replace(/^file-/, '')
+    return `https://cdn.sanity.io/files/jeo4p1su/production/${cleanAssetId}.pdf`
   }
 
-  const handleImageClick = (image: ImageItem) => {
-    if (isSelectionMode) {
-      // If in selection mode, use the existing handler
-      handleImageSelect(image)
-    } else {
-      // If not in selection mode, assign to cover and navigate to designer
-      setSelectedImage(1, 'cover-1', image)
-      router.push('/designer?page=1')
+  const handleProjectClick = (project: Project) => {
+    const pdfUrl = getPdfUrl(project.pdf)
+    if (pdfUrl) {
+      // Open PDF in a new tab/window
+      window.open(pdfUrl, '_blank', 'noopener,noreferrer')
     }
   }
 
-  const handleEmptyClick = () => {
-    if (!selectionContext) return
-    handleImageSelect(null)
-  }
-
-  // Animation: Show rows sequentially (skip animation when in selection mode)
+  // Animation: Show rows sequentially
   useEffect(() => {
     // Wait for content to load (check if we have data)
     if (images.length === 0 && projects.length === 0) return
-    
-    // If in selection mode, show all rows immediately (no animation)
-    if (isSelectionMode) {
-      const allRowIds = [
-        'cratere',
-        'by-subject',
-        ...images.map((_, i) => `image-${i}`),
-        'projects-spacing',
-        'by-commissioner',
-        ...projects.map((_, i) => `project-${i}`),
-        'colors-spacing',
-        'by-color',
-        ...colors.map((color) => `color-${color}`),
-        'randomly-spacing',
-        'randomly',
-        'empty-spacing',
-        'empty',
-        'about-spacing',
-        'about',
-      ]
-      setVisibleRows(new Set(allRowIds))
-      return
-    }
     
     // Normal animation for first load
     let timer2: NodeJS.Timeout | null = null
@@ -219,8 +184,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
           ...colors.map((color) => `color-${color}`),
           'randomly-spacing',
           'randomly',
-          'empty-spacing',
-          'empty',
           'about-spacing',
           'about',
         ]
@@ -238,23 +201,13 @@ export default function ImageList({ images, projects }: ImageListProps) {
       if (timer2) clearTimeout(timer2)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length, projects.length, colors.length, isSelectionMode])
+  }, [images.length, projects.length, colors.length])
 
   return (
     <>
-      <div className={`mobile-message ${isReady ? 'mobile-ready' : ''}`}>
-        Cratere, website for consultation only on Desktop.
-      </div>
       <div className={`image-column ${isReady ? 'column-ready' : ''}`} style={{ marginTop: '150px' }}>
         <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
-          {isSelectionMode && selectionContext && (
-            <span style={{ fontSize: '14px', fontWeight: 'normal', marginLeft: '20px' }}>
-              {selectionContext.pageNumber === 1 
-                ? 'Select an image for the cover'
-                : `Select an image for page ${selectionContext.pageNumber}`}
-            </span>
-          )}
         </div>
         <div className={`header-subtitle ${visibleRows.has('by-subject') ? 'row-visible' : 'row-hidden'}`}>By Subject</div>
         {images.map((image, index) => {
@@ -266,8 +219,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
               className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
               onMouseEnter={() => setHoveredIndex(image.index)}
               onMouseLeave={() => setHoveredIndex(null)}
-              onClick={() => handleImageClick(image)}
-              style={{ cursor: 'pointer' }}
             >
               <span className="image-number">{image.index}</span>
               <span className="image-title">{title}</span>
@@ -283,6 +234,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
           const validImages = project.images?.filter(img => img?.asset) || []
           const imageCount = validImages.length
           const projectNumber = projectIndex + 1
+          const hasPdf = !!project.pdf?.asset
           
           return (
             <div
@@ -306,31 +258,18 @@ export default function ImageList({ images, projects }: ImageListProps) {
               {imageCount > 0 && (
                 <div className="project-image-sections">
                   {validImages.map((image, imgIndex) => {
-                    // Create ImageItem from project image if needed
-                    const imageItem: ImageItem | null = image.asset ? {
-                      asset: image.asset,
-                      title: image.title,
-                      year: project.year,
-                      index: images.length + projectIndex * 1000 + imgIndex, // Unique index
-                      assetMetadata: image.assetMetadata,
-                    } : null
-                    
                     return (
                       <div
                         key={imgIndex}
                         className="project-image-section"
-                        style={{ width: `${100 / imageCount}%`, cursor: 'pointer' }}
+                        style={{ width: `${100 / imageCount}%`, cursor: hasPdf ? 'pointer' : 'default' }}
                         onMouseEnter={() => {
                           setHoveredProjectIndex(projectIndex)
                           setHoveredProjectImageIndex(imgIndex)
                         }}
                         onClick={() => {
-                          if (imageItem) {
-                            if (isSelectionMode) {
-                              handleImageSelect(imageItem)
-                            } else {
-                              handleImageClick(imageItem)
-                            }
+                          if (hasPdf) {
+                            handleProjectClick(project)
                           }
                         }}
                       />
@@ -354,17 +293,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
               className={`color-row ${visibleRows.has(`color-${color}`) ? 'row-visible' : 'row-hidden'}`}
               onMouseEnter={() => setHoveredColor(color)}
               onMouseLeave={() => setHoveredColor(null)}
-              onClick={() => {
-                const randomImage = getRandomImageForColor(color)
-                if (randomImage) {
-                  if (isSelectionMode) {
-                    handleImageSelect(randomImage)
-                  } else {
-                    handleImageClick(randomImage)
-                  }
-                }
-              }}
-              style={{ cursor: 'pointer' }}
             >
               <span className="color-name">{formattedColor}</span>
             </div>
@@ -386,53 +314,21 @@ export default function ImageList({ images, projects }: ImageListProps) {
             setHoveredRandomly(false)
             setRandomImageIndex(null)
           }}
-          onClick={() => {
-            if (randomImageIndex !== null) {
-              const validImages = images.filter(img => img?.asset)
-              if (validImages[randomImageIndex]) {
-                if (isSelectionMode) {
-                  handleImageSelect(validImages[randomImageIndex])
-                } else {
-                  handleImageClick(validImages[randomImageIndex])
-                }
-              }
-            }
-          }}
-          style={{ cursor: 'pointer' }}
         >
           <span className="randomly-text">Randomly</span>
         </div>
         
-        <div className={`empty-spacing ${visibleRows.has('empty-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div 
-          className={`empty-row ${visibleRows.has('empty') ? 'row-visible' : 'row-hidden'}`}
-          onClick={handleEmptyClick}
-          style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
-        >
-          <span className="empty-text">Empty</span>
-        </div>
-        
         <div className={`about-spacing ${visibleRows.has('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         <div className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}>
-          <button
-            className="about-toggle"
-            onClick={() => setExpandedAbout(!expandedAbout)}
-          >
-            {expandedAbout ? (
-              <div className="about-content">
-                <div className="about-line-first">-</div>
-                <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
-                <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
-                <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
-                <div className="about-line">studio@cratere.studio M: +39 3208740367</div>
-                <div className="about-line">Viale Abruzzi 32</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line">Website: Matteo Viti</div>
-              </div>
-            ) : (
-              <span>+</span>
-            )}
-          </button>
+          <div className="about-content">
+            <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
+            <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
+            <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
+            <div className="about-line">studio@cratere.studio M: +39 3208740367</div>
+            <div className="about-line">Viale Abruzzi 32</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line">Website: Matteo Viti</div>
+          </div>
         </div>
       </div>
       
@@ -496,34 +392,19 @@ export default function ImageList({ images, projects }: ImageListProps) {
       })()}
       
       <style jsx>{`
-        .mobile-message {
-          visibility: hidden;
-          display: none;
-        }
-        
-        @media (max-width: 768px) {
-          .mobile-message.mobile-ready {
-            visibility: visible;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            text-align: center;
-            padding: 20px;
-            font-size: 14px;
-            line-height: 130%;
-          }
-          
-          .image-column {
-            display: none;
-          }
-        }
-        
         .image-column {
           width: 30vw;
           margin: 150px auto 0;
           position: relative;
           z-index: 10;
+        }
+        
+        @media (max-width: 768px) {
+          .image-column {
+            width: calc(100% - 40px);
+            margin-left: 20px;
+            margin-right: 20px;
+          }
         }
         
         .row-hidden {
@@ -556,7 +437,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
           padding: 0;
           margin: 0;
           position: relative;
-          cursor: pointer;
           line-height: 130%;
           min-height: 1.3em;
           z-index: 10;
@@ -594,7 +474,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .color-row {
           position: relative;
-          cursor: pointer;
           line-height: 130%;
           min-height: 1.3em;
           z-index: 10;
@@ -612,30 +491,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .randomly-row {
           position: relative;
-          cursor: pointer;
           line-height: 130%;
           min-height: 1.3em;
           z-index: 10;
         }
         
         .randomly-text {
-          text-align: left;
-          position: absolute;
-          left: 0;
-        }
-        
-        .empty-spacing {
-          margin-top: calc(1em * 1.3 * 3);
-        }
-        
-        .empty-row {
-          position: relative;
-          line-height: 130%;
-          min-height: 1.3em;
-          z-index: 10;
-        }
-        
-        .empty-text {
           text-align: left;
           position: absolute;
           left: 0;
@@ -651,27 +512,8 @@ export default function ImageList({ images, projects }: ImageListProps) {
           margin-bottom: 150px;
         }
         
-        .about-toggle {
-          background: none;
-          border: none;
-          padding: 0;
-          margin: 0;
-          cursor: pointer;
-          text-align: left;
-          font-family: inherit;
-          font-size: inherit;
-          color: inherit;
-          line-height: 130%;
-          width: 100%;
-        }
-        
         .about-content {
           text-align: left;
-        }
-        
-        .about-line-first {
-          line-height: 130%;
-          margin-bottom: 0;
         }
         
         .about-line {
@@ -685,7 +527,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .project-row {
           position: relative;
-          cursor: pointer;
           margin-bottom: 3px;
           min-height: calc(1.3em * 2);
         }
@@ -756,7 +597,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .project-image-section {
           height: 100%;
-          cursor: pointer;
           pointer-events: auto;
         }
         
@@ -775,6 +615,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
           width: auto;
           height: auto;
           object-fit: contain;
+        }
+        
+        @media (max-width: 768px) {
+          .image-preview {
+            max-width: 80vw;
+          }
         }
       `}</style>
     </>

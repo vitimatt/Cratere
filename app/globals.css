@@ -41,3 +41,16 @@ body {
   --background-end-rgb: 255, 255, 255;
 }
 
+/* Hide Cursor IDE browser extension overlays */
+[data-cursor-ide],
+[data-cursor-ide] *,
+*[class*="cursor-ide"],
+*[class*="cursor-ide"] *,
+*[id*="cursor-ide"],
+*[id*="cursor-ide"] * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
