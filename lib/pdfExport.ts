@@ -241,9 +241,16 @@ async function renderPage(
           finalWidth = imgDimensions.width * scale
           finalHeight = imgDimensions.height * scale
           
-          // Center the image
+          // Center horizontally
           finalLeft = slotLeft + (slotWidth - finalWidth) / 2
-          finalTop = slotTop + (slotHeight - finalHeight) / 2
+          
+          // For cover (page 1) with horizontal images, align to top; otherwise center vertically
+          const isCover = pageNumber === 1
+          if (isCover && isHorizontal) {
+            finalTop = slotTop // Align to top
+          } else {
+            finalTop = slotTop + (slotHeight - finalHeight) / 2 // Center vertically
+          }
           
           // Determine image format from data URL
           const format = imgDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'

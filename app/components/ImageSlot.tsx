@@ -70,6 +70,10 @@ export default function ImageSlot({
 
   // Determine object position
   const getObjectPosition = () => {
+    // For square slots with fit mode (like medium-centered layout), always center
+    if (aspectRatio === 'square' && cropMode === 'fit') {
+      return 'center center'
+    }
     if (aspectRatio === '3:2' && cropMode === 'fill') {
       // For horizontal images that need to fill, center them
       return 'center center'
