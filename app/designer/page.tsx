@@ -17,9 +17,8 @@ const LAYOUT_OPTIONS: { type: LayoutType; label: string }[] = [
 function DesignerPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { setCurrentPage, currentPage, selectedImages, getLayout, setLayout, clearImagesForSpread } = useDesigner()
+  const { setCurrentPage, currentPage, selectedImages, getLayout, setLayout, clearImagesForSpread, title, setTitle } = useDesigner()
   const [isExporting, setIsExporting] = useState(false)
-  const [title, setTitle] = useState<string>('')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isLayoutSelectionMode, setIsLayoutSelectionMode] = useState(false)
   const [previewLayout, setPreviewLayout] = useState<LayoutType | null>(null)

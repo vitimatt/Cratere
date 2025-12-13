@@ -123,6 +123,7 @@ async function renderPage(
 
   console.log(`Rendering page ${pageNumber}, side: ${side || 'none'}, slots:`, slots.map(s => s.id))
 
+  // Process slots sequentially to avoid race conditions with image loading
   for (const slot of slots) {
     const key = `${pageNumber}-${slot.id}`
     const image = selectedImages.get(key)
@@ -130,7 +131,9 @@ async function renderPage(
     console.log(`Looking for key: "${key}"`)
     console.log(`  Found:`, image ? 'YES - has image' : 'NO - empty')
     if (image) {
-      console.log(`  Image asset:`, image.asset?._ref || image.asset?._id || 'no ref/id')
+      const assetRef = image.asset?._ref || image.asset?._id || 'no ref/id'
+      console.log(`  Image asset:`, assetRef)
+      console.log(`  Image URL will be:`, urlFor(image.asset).width(2000).quality(90).url())
     }
     
     // Debug: show all keys in the map
@@ -143,8 +146,10 @@ async function renderPage(
     if (image && image.asset) {
       try {
         // Get image URL - use higher quality for PDF
+        // Generate a unique URL for each image to ensure proper loading
         const imageUrl = urlFor(image.asset).width(2000).quality(90).url()
-        console.log(`Loading image for slot ${slot.id}:`, imageUrl)
+        console.log(`Loading image for slot ${slot.id} (key: ${key}):`, imageUrl)
+        console.log(`  Asset ref:`, image.asset?._ref || image.asset?._id)
 
         const slotLeft = mmToNum(slot.left || '0')
         const slotTop = mmToNum(slot.top || '0')
@@ -172,7 +177,7 @@ async function renderPage(
         
         console.log(`Image loaded for slot ${slot.id}, adding to PDF`)
         
-        // Get image dimensions
+        // Get image dimensions (in pixels)
         const imgDimensions = await getImageDimensions(imgDataUrl)
         const imgAspectRatio = imgDimensions.width / imgDimensions.height
         const isHorizontal = imgDimensions.width > imgDimensions.height
@@ -188,17 +193,45 @@ async function renderPage(
         
         if (cropMode === 'fill') {
           // Fill the slot, crop if needed (cover behavior)
-          // Scale to cover the entire slot
-          const scaleByWidth = slotWidth / imgDimensions.width
-          const scaleByHeight = slotHeight / imgDimensions.height
-          const scale = Math.max(scaleByWidth, scaleByHeight) // Use max to cover
+          // Calculate scale based on aspect ratios
+          const imageAspectRatio = imgDimensions.width / imgDimensions.height
+          const slotAspectRatio = slotWidth / slotHeight
           
-          finalWidth = imgDimensions.width * scale
-          finalHeight = imgDimensions.height * scale
+          // Determine which dimension to scale by to cover the slot
+          let scale: number
+          if (imageAspectRatio > slotAspectRatio) {
+            // Image is wider than slot - scale by height to fill slot height
+            // This means we'll crop from the sides
+            scale = slotHeight / slotWidth * imageAspectRatio
+          } else {
+            // Image is taller than slot - scale by width to fill slot width  
+            // This means we'll crop from top/bottom
+            scale = slotWidth / slotHeight / imageAspectRatio
+          }
           
-          // Center the image
-          finalLeft = slotLeft + (slotWidth - finalWidth) / 2
-          finalTop = slotTop + (slotHeight - finalHeight) / 2
+          // For fill mode, crop the image using canvas before adding to PDF
+          const croppedImageDataUrl = await cropImageToSlot(
+            imgDataUrl,
+            imgDimensions.width,
+            imgDimensions.height,
+            slotWidth,
+            slotHeight,
+            imageAspectRatio,
+            slotAspectRatio
+          )
+          
+          // Determine image format from data URL
+          const format = croppedImageDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+          
+          // Add the cropped image, positioned at the slot location
+          pdf.addImage(
+            croppedImageDataUrl,
+            format,
+            slotLeft,
+            slotTop,
+            slotWidth,
+            slotHeight
+          )
         } else {
           // Fit mode: maintain aspect ratio, fit within slot (contain behavior)
           const scaleByWidth = slotWidth / imgDimensions.width
@@ -211,19 +244,19 @@ async function renderPage(
           // Center the image
           finalLeft = slotLeft + (slotWidth - finalWidth) / 2
           finalTop = slotTop + (slotHeight - finalHeight) / 2
+          
+          // Determine image format from data URL
+          const format = imgDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+          
+          pdf.addImage(
+            imgDataUrl,
+            format,
+            finalLeft,
+            finalTop,
+            finalWidth,
+            finalHeight
+          )
         }
-        
-        // Determine image format from data URL
-        const format = imgDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-        
-        pdf.addImage(
-          imgDataUrl,
-          format,
-          finalLeft,
-          finalTop,
-          finalWidth,
-          finalHeight
-        )
         console.log(`✓ Image successfully added to PDF for slot ${slot.id} (${isHorizontal ? 'horizontal' : 'vertical'})`)
       } catch (error) {
         console.error(`✗ Error loading image for slot ${slot.id}:`, error)
@@ -238,9 +271,17 @@ async function renderPage(
 function loadImage(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // Use Next.js API route as proxy to avoid CORS issues
-    const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}`
+    // Add cache-busting parameter to ensure each image is loaded fresh
+    const cacheBuster = Date.now() + Math.random()
+    const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(url)}&_cb=${cacheBuster}`
     
-    fetch(proxyUrl)
+    // Disable caching to ensure we get fresh images
+    fetch(proxyUrl, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
       .then(response => {
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
@@ -287,6 +328,91 @@ function getImageDimensions(dataUrl: string): Promise<{ width: number; height: n
       reject(new Error('Failed to load image for dimension check'))
     }
     img.src = dataUrl
+  })
+}
+
+async function cropImageToSlot(
+  imageDataUrl: string,
+  imgWidthPx: number,
+  imgHeightPx: number,
+  slotWidthMm: number,
+  slotHeightMm: number,
+  imageAspectRatio: number,
+  slotAspectRatio: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        // Convert mm to pixels for canvas (using high DPI for quality)
+        const dpi = 300
+        const mmToPx = dpi / 25.4
+        const slotWidthPx = slotWidthMm * mmToPx
+        const slotHeightPx = slotHeightMm * mmToPx
+        
+        // Create canvas for the slot size
+        const canvas = document.createElement('canvas')
+        canvas.width = slotWidthPx
+        canvas.height = slotHeightPx
+        
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'))
+          return
+        }
+        
+        // Calculate what portion of the original image to crop
+        // We want to fill the slot, so we need to determine the crop area
+        let sourceX = 0
+        let sourceY = 0
+        let sourceWidth = imgWidthPx
+        let sourceHeight = imgHeightPx
+        
+        if (imageAspectRatio > slotAspectRatio) {
+          // Image is wider than slot - crop from sides (center crop)
+          // Calculate the width we need to show to match slot aspect ratio
+          const targetWidth = imgHeightPx * slotAspectRatio
+          sourceX = (imgWidthPx - targetWidth) / 2
+          sourceWidth = targetWidth
+        } else {
+          // Image is taller than slot - crop from top/bottom (center crop)
+          // Calculate the height we need to show to match slot aspect ratio
+          const targetHeight = imgWidthPx / slotAspectRatio
+          sourceY = (imgHeightPx - targetHeight) / 2
+          sourceHeight = targetHeight
+        }
+        
+        // Ensure we don't go beyond image boundaries
+        sourceX = Math.max(0, Math.min(sourceX, imgWidthPx))
+        sourceY = Math.max(0, Math.min(sourceY, imgHeightPx))
+        sourceWidth = Math.min(sourceWidth, imgWidthPx - sourceX)
+        sourceHeight = Math.min(sourceHeight, imgHeightPx - sourceY)
+        
+        // Draw the cropped portion of the image to the canvas
+        // This will automatically scale it to fit the canvas (slot) exactly
+        ctx.drawImage(
+          img,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        )
+        
+        // Convert canvas to data URL
+        const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95)
+        resolve(croppedDataUrl)
+      } catch (error) {
+        reject(error)
+      }
+    }
+    img.onerror = () => {
+      reject(new Error('Failed to load image for cropping'))
+    }
+    img.src = imageDataUrl
   })
 }
 

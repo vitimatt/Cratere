@@ -22,11 +22,13 @@ interface DesignerContextType {
   currentPage: number
   selectionContext: SelectionContext | null
   layouts: Map<number, LayoutType>
+  title: string
   setSelectedImage: (pageNumber: number, slotId: string, image: ImageData | null) => void
   setCurrentPage: (page: number) => void
   setSelectionContext: (context: SelectionContext | null) => void
   setLayout: (pageNumber: number, layout: LayoutType) => void
   getLayout: (pageNumber: number) => LayoutType
+  setTitle: (title: string) => void
   clearSelection: () => void
   clearImagesForSpread: (pageNumber: number) => void
 }
@@ -38,6 +40,7 @@ export function DesignerProvider({ children }: { children: ReactNode }) {
   const [currentPage, setCurrentPage] = useState<number>(1)
   const [selectionContext, setSelectionContext] = useState<SelectionContext | null>(null)
   const [layouts, setLayouts] = useState<Map<number, LayoutType>>(new Map())
+  const [title, setTitle] = useState<string>('')
 
   const setSelectedImage = (pageNumber: number, slotId: string, image: ImageData | null) => {
     setSelectedImages(prev => {
@@ -88,11 +91,13 @@ export function DesignerProvider({ children }: { children: ReactNode }) {
         currentPage,
         selectionContext,
         layouts,
+        title,
         setSelectedImage,
         setCurrentPage,
         setSelectionContext,
         setLayout,
         getLayout,
+        setTitle,
         clearSelection,
         clearImagesForSpread,
       }}
