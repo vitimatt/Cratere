@@ -35,6 +35,19 @@ body {
   visibility: visible;
 }
 
+/* Hide mobile message by default to prevent flash on page load */
+.mobile-message {
+  visibility: hidden !important;
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-message.mobile-ready {
+    visibility: visible !important;
+    display: flex !important;
+  }
+}
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 255, 255, 255;
