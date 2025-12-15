@@ -1,6 +1,10 @@
 import { client } from '../lib/sanity'
 import ImageList from './components/ImageList'
 
+// Force dynamic rendering to always fetch fresh data
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 async function getProjects() {
   const projects = await client.fetch(`
     *[_type == "project"] | order(year desc) {
