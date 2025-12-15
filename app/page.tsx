@@ -23,6 +23,45 @@ async function getProjects() {
   return projects
 }
 
+// Helper function to extract title from filename (similar to ImageList component)
+function extractTitleFromFilename(asset: any, assetMetadata?: any, imageTitle?: string): string {
+  // Use image title if available
+  if (imageTitle) return imageTitle
+  
+  let filename = ''
+  
+  // Try to get original filename from metadata first
+  if (assetMetadata?.originalFilename) {
+    filename = assetMetadata.originalFilename
+  } else if (asset?.originalFilename) {
+    filename = asset.originalFilename
+  } else if (asset?._ref) {
+    // Fallback: try to extract from asset reference
+    const parts = asset._ref.split('-')
+    if (parts.length > 0) {
+      filename = parts[parts.length - 1]
+    }
+  }
+  
+  if (!filename) return 'Untitled'
+  
+  // Remove file extension
+  filename = filename.replace(/\.[^/.]+$/, '')
+  
+  // Split by '-' to separate title from color
+  // Everything before the last '-' is the title
+  const parts = filename.split('-')
+  if (parts.length > 1) {
+    // Join all parts except the last one (which is the color)
+    const titlePart = parts.slice(0, -1).join('-')
+    // Replace underscores with spaces
+    return titlePart.replace(/_/g, ' ').trim()
+  } else {
+    // No '-' found, just replace underscores with spaces
+    return filename.replace(/_/g, ' ').trim()
+  }
+}
+
 export default async function Home() {
   const projects = await getProjects()
   
@@ -50,6 +89,18 @@ export default async function Home() {
         }
       })
     }
+  })
+
+  // Sort images alphabetically by subject (title)
+  allImages.sort((a, b) => {
+    const titleA = extractTitleFromFilename(a.asset, a.assetMetadata, a.title).toLowerCase()
+    const titleB = extractTitleFromFilename(b.asset, b.assetMetadata, b.title).toLowerCase()
+    return titleA.localeCompare(titleB)
+  })
+
+  // Re-index images after sorting
+  allImages.forEach((image, index) => {
+    image.index = index + 1
   })
 
   return (
