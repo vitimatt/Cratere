@@ -22,7 +22,7 @@ interface PageSpreadProps {
 }
 
 export default function PageSpread({ pageNumber, isSinglePage = false, slots, isLayoutPreviewMode = false, previewLayout = null }: PageSpreadProps) {
-  const { selectedImages, setSelectionContext, setCurrentPage } = useDesigner()
+  const { selectedImages, setSelectionContext, setCurrentPage, totalPages } = useDesigner()
   const router = useRouter()
   const [cursorText, setCursorText] = useState<string>('')
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -69,7 +69,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
 
     if (isLeftClick && pageNumber > 1) {
       setCursorText('Previous')
-    } else if (!isLeftClick && pageNumber < 32) {
+    } else if (!isLeftClick && pageNumber < totalPages) {
       setCursorText('Next')
     } else {
       setCursorText('')
@@ -109,13 +109,13 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
         prevPage = pageNumber - 2
       }
       router.push(`/designer?page=${prevPage}`)
-    } else if (!isLeftClick && pageNumber < 32) {
+    } else if (!isLeftClick && pageNumber < totalPages) {
       // Navigate to next spread
       let nextPage: number
       if (isSinglePage) {
         nextPage = pageNumber + 1
-      } else if (pageNumber === 30) {
-        nextPage = 32
+      } else if (pageNumber === totalPages - 2) {
+        nextPage = totalPages
       } else {
         nextPage = pageNumber + 2
       }
@@ -209,6 +209,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                 }}
               >
                 <ImageSlot
+                  key={`${pageNumber}-${slot.id}`}
                   slotId={slot.id}
                   pageNumber={pageNumber}
                   image={getImageForSlot(slot.id)}
@@ -266,6 +267,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                     }}
                   >
                     <ImageSlot
+                      key={`${pageNumber}-${slot.id}`}
                       slotId={slot.id}
                       pageNumber={pageNumber}
                       image={getImageForSlot(slot.id)}
@@ -321,6 +323,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                     }}
                   >
                     <ImageSlot
+                      key={`${pageNumber}-${slot.id}`}
                       slotId={slot.id}
                       pageNumber={pageNumber}
                       image={getImageForSlot(slot.id)}

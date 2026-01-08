@@ -23,12 +23,14 @@ interface DesignerContextType {
   selectionContext: SelectionContext | null
   layouts: Map<number, LayoutType>
   title: string
+  totalPages: number
   setSelectedImage: (pageNumber: number, slotId: string, image: ImageData | null) => void
   setCurrentPage: (page: number) => void
   setSelectionContext: (context: SelectionContext | null) => void
   setLayout: (pageNumber: number, layout: LayoutType) => void
   getLayout: (pageNumber: number) => LayoutType
   setTitle: (title: string) => void
+  setTotalPages: (pages: number) => void
   clearSelection: () => void
   clearImagesForSpread: (pageNumber: number) => void
 }
@@ -41,6 +43,7 @@ export function DesignerProvider({ children }: { children: ReactNode }) {
   const [selectionContext, setSelectionContext] = useState<SelectionContext | null>(null)
   const [layouts, setLayouts] = useState<Map<number, LayoutType>>(new Map())
   const [title, setTitle] = useState<string>('')
+  const [totalPages, setTotalPages] = useState<number>(16)
 
   const setSelectedImage = (pageNumber: number, slotId: string, image: ImageData | null) => {
     setSelectedImages(prev => {
@@ -67,11 +70,11 @@ export function DesignerProvider({ children }: { children: ReactNode }) {
     setSelectedImages(new Map())
   }
 
-  const clearImagesForSpread = (pageNumber: number) => {
+  const clearImagesForSpread = (pageNumber: number, totalPages: number) => {
     setSelectedImages(prev => {
       const newMap = new Map(prev)
       // Clear images for both pages in the spread
-      const spreadPages = pageNumber === 1 ? [1] : pageNumber === 32 ? [32] : [pageNumber, pageNumber + 1]
+      const spreadPages = pageNumber === 1 ? [1] : pageNumber === totalPages ? [totalPages] : [pageNumber, pageNumber + 1]
       spreadPages.forEach(p => {
         // Remove all keys that start with this page number
         Array.from(newMap.keys()).forEach(key => {
@@ -92,14 +95,16 @@ export function DesignerProvider({ children }: { children: ReactNode }) {
         selectionContext,
         layouts,
         title,
+        totalPages,
         setSelectedImage,
         setCurrentPage,
         setSelectionContext,
         setLayout,
         getLayout,
         setTitle,
+        setTotalPages,
         clearSelection,
-        clearImagesForSpread,
+        clearImagesForSpread: (pageNumber: number) => clearImagesForSpread(pageNumber, totalPages),
       }}
     >
       {children}

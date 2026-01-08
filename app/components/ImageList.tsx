@@ -36,6 +36,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
   const [hoveredProjectImageIndex, setHoveredProjectImageIndex] = useState<number | null>(null)
   const [hoveredColor, setHoveredColor] = useState<string | null>(null)
+  const [hoveredColorImage, setHoveredColorImage] = useState<ImageItem | null>(null)
   const [hoveredRandomly, setHoveredRandomly] = useState<boolean>(false)
   const [randomImageIndex, setRandomImageIndex] = useState<number | null>(null)
   const [expandedAbout, setExpandedAbout] = useState<boolean>(false)
@@ -264,7 +265,11 @@ export default function ImageList({ images, projects }: ImageListProps) {
             <div
               key={image.index}
               className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
-              onMouseEnter={() => setHoveredIndex(image.index)}
+              onMouseEnter={() => {
+                if (visibleRows.has(`image-${index}`)) {
+                  setHoveredIndex(image.index)
+                }
+              }}
               onMouseLeave={() => setHoveredIndex(null)}
               onClick={() => handleImageClick(image)}
               style={{ cursor: 'pointer' }}
@@ -321,8 +326,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
                         className="project-image-section"
                         style={{ width: `${100 / imageCount}%`, cursor: 'pointer' }}
                         onMouseEnter={() => {
-                          setHoveredProjectIndex(projectIndex)
-                          setHoveredProjectImageIndex(imgIndex)
+                          if (visibleRows.has(`project-${projectIndex}`)) {
+                            setHoveredProjectIndex(projectIndex)
+                            setHoveredProjectImageIndex(imgIndex)
+                          }
                         }}
                         onClick={() => {
                           if (imageItem) {
@@ -352,15 +359,23 @@ export default function ImageList({ images, projects }: ImageListProps) {
             <div
               key={color}
               className={`color-row ${visibleRows.has(`color-${color}`) ? 'row-visible' : 'row-hidden'}`}
-              onMouseEnter={() => setHoveredColor(color)}
-              onMouseLeave={() => setHoveredColor(null)}
+              onMouseEnter={() => {
+                if (visibleRows.has(`color-${color}`)) {
+                  const randomImage = getRandomImageForColor(color)
+                  setHoveredColor(color)
+                  setHoveredColorImage(randomImage)
+                }
+              }}
+              onMouseLeave={() => {
+                setHoveredColor(null)
+                setHoveredColorImage(null)
+              }}
               onClick={() => {
-                const randomImage = getRandomImageForColor(color)
-                if (randomImage) {
+                if (hoveredColorImage) {
                   if (isSelectionMode) {
-                    handleImageSelect(randomImage)
+                    handleImageSelect(hoveredColorImage)
                   } else {
-                    handleImageClick(randomImage)
+                    handleImageClick(hoveredColorImage)
                   }
                 }
               }}
@@ -375,11 +390,13 @@ export default function ImageList({ images, projects }: ImageListProps) {
         <div
           className={`randomly-row ${visibleRows.has('randomly') ? 'row-visible' : 'row-hidden'}`}
           onMouseEnter={() => {
-            const validImages = images.filter(img => img?.asset)
-            if (validImages.length > 0) {
-              const randomIndex = Math.floor(Math.random() * validImages.length)
-              setRandomImageIndex(randomIndex)
-              setHoveredRandomly(true)
+            if (visibleRows.has('randomly')) {
+              const validImages = images.filter(img => img?.asset)
+              if (validImages.length > 0) {
+                const randomIndex = Math.floor(Math.random() * validImages.length)
+                setRandomImageIndex(randomIndex)
+                setHoveredRandomly(true)
+              }
             }
           }}
           onMouseLeave={() => {
@@ -465,19 +482,15 @@ export default function ImageList({ images, projects }: ImageListProps) {
          )
        })()}
       
-      {hoveredColor && (() => {
-        const randomImage = getRandomImageForColor(hoveredColor)
-        if (!randomImage?.asset) return null
-        return (
-          <div className="image-preview-overlay">
-            <img
-              src={urlFor(randomImage.asset).width(2000).url()}
-              alt={randomImage.title || extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) || `Color ${hoveredColor}`}
-              className="image-preview"
-            />
-          </div>
-        )
-      })()}
+      {hoveredColor && hoveredColorImage && hoveredColorImage.asset && (
+        <div className="image-preview-overlay">
+          <img
+            src={urlFor(hoveredColorImage.asset).width(2000).url()}
+            alt={hoveredColorImage.title || extractTitleFromFilename(hoveredColorImage.asset, hoveredColorImage.assetMetadata) || `Color ${hoveredColor}`}
+            className="image-preview"
+          />
+        </div>
+      )}
       
       {hoveredRandomly && randomImageIndex !== null && (() => {
         const validImages = images.filter(img => img?.asset)

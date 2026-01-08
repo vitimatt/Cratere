@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { urlFor } from '../../lib/imageUrl'
 
 interface ImageData {
@@ -38,6 +38,12 @@ export default function ImageSlot({
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null)
   const [cursorText, setCursorText] = useState<string>('')
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Reset image state when image or pageNumber changes
+  useEffect(() => {
+    setImageLoaded(false)
+    setImageAspectRatio(null)
+  }, [image, pageNumber, slotId])
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
