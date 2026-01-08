@@ -34,7 +34,19 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
   // A4 ratio: 210mm / 297mm = 0.707
   const A4_RATIO = 210 / 297
 
+  const isSlotOnBackCover = (slotId: string): boolean => {
+    // For right-side slots in two-page spreads, use pageNumber + 1
+    const actualPageNumber = !isSinglePage && slotId.startsWith('right-') 
+      ? pageNumber + 1 
+      : pageNumber
+    return actualPageNumber === totalPages
+  }
+
   const handleSlotClick = (slotId: string) => {
+    // Prevent adding images to the back cover (last page)
+    if (isSlotOnBackCover(slotId)) {
+      return
+    }
     // For right-side slots in two-page spreads, use pageNumber + 1
     const actualPageNumber = !isSinglePage && slotId.startsWith('right-') 
       ? pageNumber + 1 
@@ -124,6 +136,10 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
   }
 
   const getImageForSlot = (slotId: string): ImageData | null | undefined => {
+    // Prevent showing images on the back cover (last page)
+    if (isSlotOnBackCover(slotId)) {
+      return undefined
+    }
     // For right-side slots in two-page spreads, use pageNumber + 1
     const actualPageNumber = !isSinglePage && slotId.startsWith('right-') 
       ? pageNumber + 1 
@@ -218,7 +234,8 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                   height="100%"
                   aspectRatio={slot.aspectRatio}
                   cropMode={slot.cropMode}
-                  isPreviewMode={isLayoutPreviewMode}
+                  isPreviewMode={isLayoutPreviewMode || isSlotOnBackCover(slot.id)}
+                  isBackCover={isSlotOnBackCover(slot.id)}
                 />
               </div>
             )
@@ -276,7 +293,8 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                       height="100%"
                       aspectRatio={slot.aspectRatio}
                       cropMode={slot.cropMode}
-                      isPreviewMode={isLayoutPreviewMode}
+                      isPreviewMode={isLayoutPreviewMode || isSlotOnBackCover(slot.id)}
+                      isBackCover={isSlotOnBackCover(slot.id)}
                     />
                   </div>
                 )
@@ -332,7 +350,8 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                       height="100%"
                       aspectRatio={slot.aspectRatio}
                       cropMode={slot.cropMode}
-                      isPreviewMode={isLayoutPreviewMode}
+                      isPreviewMode={isLayoutPreviewMode || isSlotOnBackCover(slot.id)}
+                      isBackCover={isSlotOnBackCover(slot.id)}
                     />
                   </div>
                 )

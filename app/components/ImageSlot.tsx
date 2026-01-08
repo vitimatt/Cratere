@@ -21,6 +21,7 @@ interface ImageSlotProps {
   aspectRatio?: 'square' | '3:2' | '2:3' | 'free'
   cropMode?: 'fill' | 'fit'
   isPreviewMode?: boolean
+  isBackCover?: boolean
 }
 
 export default function ImageSlot({ 
@@ -32,7 +33,8 @@ export default function ImageSlot({
   height = '100%',
   aspectRatio = '2:3',
   cropMode = 'fit',
-  isPreviewMode = false
+  isPreviewMode = false,
+  isBackCover = false
 }: ImageSlotProps) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null)
@@ -129,9 +131,9 @@ export default function ImageSlot({
         style={{
           width,
           height,
-          backgroundColor: isPreviewMode ? '#EFEFEF' : (image ? 'transparent' : image === null ? '#FFFFFF' : '#EFEFEF'),
+          backgroundColor: isBackCover ? '#FFFFFF' : (isPreviewMode ? '#EFEFEF' : (image ? 'transparent' : image === null ? '#FFFFFF' : '#EFEFEF')),
           border: 'none',
-          cursor: isPreviewMode ? 'default' : 'pointer',
+          cursor: (isPreviewMode || isBackCover) ? 'default' : 'pointer',
           position: 'relative',
           overflow: isPreviewMode ? 'visible' : 'hidden',
           display: 'flex',
