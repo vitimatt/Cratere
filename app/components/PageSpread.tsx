@@ -55,6 +55,10 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
     router.push('/')
   }
 
+  const handleSlotHover = () => {
+    router.prefetch('/')
+  }
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const clickX = e.clientX - rect.left
@@ -216,6 +220,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
               <div
                 key={slot.id}
                 data-image-slot
+                onMouseEnter={!isSlotOnBackCover(slot.id) ? handleSlotHover : undefined}
                 style={{
                   position: 'absolute',
                   left: `${slotLeftPercent}%`,
@@ -275,6 +280,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                   <div
                     key={slot.id}
                     data-image-slot
+                    onMouseEnter={!isSlotOnBackCover(slot.id) ? handleSlotHover : undefined}
                     style={{
                       position: 'absolute',
                       left: `${slotLeftPercent}%`,
@@ -332,6 +338,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                   <div
                     key={slot.id}
                     data-image-slot
+                    onMouseEnter={!isSlotOnBackCover(slot.id) ? handleSlotHover : undefined}
                     style={{
                       position: 'absolute',
                       left: `${slotLeftPercent}%`,

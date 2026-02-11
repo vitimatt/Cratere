@@ -27,6 +27,10 @@ function DesignerPageContent() {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    router.prefetch('/')
+  }, [router])
+
+  useEffect(() => {
     const pageParam = searchParams.get('page')
     if (pageParam) {
       const page = parseInt(pageParam, 10)

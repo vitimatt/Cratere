@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { urlFor } from '../../lib/imageUrl'
 import { useDesigner } from '../contexts/DesignerContext'
@@ -44,16 +44,137 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const [expandedAbout, setExpandedAbout] = useState<boolean>(false)
   const [visibleRows, setVisibleRows] = useState<Set<string>>(new Set())
   const [isReady, setIsReady] = useState<boolean>(false)
+  const [isMobile, setIsMobile] = useState<boolean>(false)
+  const [centeredImageIndex, setCenteredImageIndex] = useState<number | null>(null)
+  const [centeredProjectIndex, setCenteredProjectIndex] = useState<{ projectIndex: number; imageIndex: number } | null>(null)
+  const [centeredColor, setCenteredColor] = useState<string | null>(null)
+  const [centeredRandomly, setCenteredRandomly] = useState<boolean>(false)
   
   const isSelectionMode = selectionContext !== null
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map())
+  const bySubjectRef = useRef<HTMLDivElement>(null)
+  const byCommissionerRef = useRef<HTMLDivElement>(null)
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null)
+  const imageColumnRef = useRef<HTMLDivElement | null>(null)
+  const randomlyImageIndexRef = useRef<number | null>(null)
+
+  const updateHoverFromPosition = useCallback(() => {
+    if (isMobile) return
+    const pos = mousePosRef.current
+    if (!pos || !imageColumnRef.current) return
+    const el = document.elementFromPoint(pos.x, pos.y)
+    if (!el || !imageColumnRef.current.contains(el)) {
+      setHoveredIndex(null)
+      setHoveredProjectIndex(null)
+      setHoveredProjectImageIndex(null)
+      setHoveredColor(null)
+      setHoveredColorImage(null)
+      setHoveredRandomly(false)
+      setRandomImageIndex(null)
+      return
+    }
+    const imageRow = el.closest('.image-row') as HTMLElement | null
+    if (imageRow) {
+      const idx = imageRow.getAttribute('data-image-index')
+      if (idx !== null && visibleRows.has(`image-${idx}`)) {
+        const index = parseInt(idx, 10)
+        setHoveredIndex(images[index]?.index ?? null)
+        setHoveredProjectIndex(null)
+        setHoveredProjectImageIndex(null)
+        setHoveredColor(null)
+        setHoveredColorImage(null)
+        setHoveredRandomly(false)
+        setRandomImageIndex(null)
+        return
+      }
+    }
+    const projectSection = el.closest('.project-image-section') as HTMLElement | null
+    if (projectSection) {
+      const pIdx = projectSection.getAttribute('data-project-index')
+      const imgIdx = projectSection.getAttribute('data-project-image-index')
+      if (pIdx !== null && imgIdx !== null && visibleRows.has(`project-${pIdx}`)) {
+        setHoveredIndex(null)
+        setHoveredProjectIndex(parseInt(pIdx, 10))
+        setHoveredProjectImageIndex(parseInt(imgIdx, 10))
+        setHoveredColor(null)
+        setHoveredColorImage(null)
+        setHoveredRandomly(false)
+        setRandomImageIndex(null)
+        return
+      }
+    }
+    const colorRow = el.closest('.color-row') as HTMLElement | null
+    if (colorRow) {
+      const cKey = colorRow.getAttribute('data-color-key')
+      if (cKey && visibleRows.has(`color-${cKey}`)) {
+        const randomImage = getRandomImageForColor(cKey)
+        setHoveredIndex(null)
+        setHoveredProjectIndex(null)
+        setHoveredProjectImageIndex(null)
+        setHoveredColor(cKey)
+        setHoveredColorImage(randomImage)
+        setHoveredRandomly(false)
+        setRandomImageIndex(null)
+        return
+      }
+    }
+    const randomlyRow = el.closest('.randomly-row')
+    if (randomlyRow && visibleRows.has('randomly')) {
+      const validImages = images.filter(img => img?.asset)
+      if (validImages.length > 0) {
+        const rnd = Math.floor(Math.random() * validImages.length)
+        setHoveredIndex(null)
+        setHoveredProjectIndex(null)
+        setHoveredProjectImageIndex(null)
+        setHoveredColor(null)
+        setHoveredColorImage(null)
+        setHoveredRandomly(true)
+        setRandomImageIndex(rnd)
+        return
+      }
+    }
+    setHoveredIndex(null)
+    setHoveredProjectIndex(null)
+    setHoveredProjectImageIndex(null)
+    setHoveredColor(null)
+    setHoveredColorImage(null)
+    setHoveredRandomly(false)
+    setRandomImageIndex(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images, visibleRows, isMobile])
 
   useEffect(() => {
-    // Mark as ready after a tiny delay to ensure styles are applied
-    const timer = setTimeout(() => {
-      setIsReady(true)
-    }, 0)
-    return () => clearTimeout(timer)
+    const timer = setTimeout(() => setIsReady(true), 0)
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', checkMobile)
+    }
   }, [])
+
+  useEffect(() => {
+    // Prefetch designer pages for instant navigation
+    for (let p = 1; p <= 5; p++) {
+      router.prefetch(`/designer?page=${p}`)
+    }
+  }, [router])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY }
+    }
+    const handleScroll = () => {
+      requestAnimationFrame(updateHoverFromPosition)
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [updateHoverFromPosition])
 
   const extractTitleFromFilename = (asset: any, assetMetadata?: any): string => {
     let filename = ''
@@ -157,6 +278,95 @@ export default function ImageList({ images, projects }: ImageListProps) {
     const labelB = imagesByColor[b]?.label?.toLowerCase() ?? ''
     return labelA.localeCompare(labelB)
   })
+
+  // Scroll handler for mobile - find which row is at top line of text (20px from viewport top, matching side gap)
+  useEffect(() => {
+    if (!isMobile) return
+    const detectionLine = 10 // Same as top padding
+    const handleScroll = () => {
+      let closestRow: { id: string; distance: number } | null = null
+      const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
+      // Prefer row that contains the detection line; else use closest top edge
+      const distToLine = (rect: DOMRect) => {
+        if (rect.top <= detectionLine && rect.bottom >= detectionLine) return 0
+        return Math.abs(rect.top - detectionLine)
+      }
+      if (bySubjectRef.current) {
+        const rect = bySubjectRef.current.getBoundingClientRect()
+        const distance = distToLine(rect)
+        if (distance < getMinDistance()) closestRow = { id: 'by-subject', distance }
+      }
+      images.forEach((_, index) => {
+        const el = rowRefs.current.get(`image-${index}`)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const distance = distToLine(rect)
+          if (distance < getMinDistance()) closestRow = { id: `image-${index}`, distance }
+        }
+      })
+      if (byCommissionerRef.current) {
+        const rect = byCommissionerRef.current.getBoundingClientRect()
+        const distance = distToLine(rect)
+        if (distance < getMinDistance()) {
+          const firstWithImages = projects.findIndex(p => p?.images?.some(img => img?.asset))
+          if (firstWithImages >= 0) closestRow = { id: `project-${firstWithImages}`, distance }
+        }
+      }
+      projects.forEach((_, projectIndex) => {
+        const el = rowRefs.current.get(`project-${projectIndex}`)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const distance = distToLine(rect)
+          if (distance < getMinDistance()) closestRow = { id: `project-${projectIndex}`, distance }
+        }
+      })
+      const aboutEl = rowRefs.current.get('about')
+      if (aboutEl) {
+        const rect = aboutEl.getBoundingClientRect()
+        const distance = distToLine(rect)
+        if (distance < getMinDistance()) closestRow = { id: 'about', distance }
+      }
+      if (closestRow) {
+        if (closestRow.id.startsWith('image-')) {
+          const index = parseInt(closestRow.id.replace('image-', ''))
+          setCenteredImageIndex(images[index]?.index ?? null)
+          setCenteredProjectIndex(null)
+          setCenteredColor(null)
+          setCenteredRandomly(false)
+          randomlyImageIndexRef.current = null
+        } else if (closestRow.id.startsWith('project-')) {
+          const projectIndex = parseInt(closestRow.id.replace('project-', ''))
+          const project = projects[projectIndex]
+          if (project?.images?.some(img => img?.asset)) {
+            setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
+            setCenteredImageIndex(null)
+            setCenteredColor(null)
+            setCenteredRandomly(false)
+            randomlyImageIndexRef.current = null
+          } else {
+            setCenteredProjectIndex(null)
+          }
+        } else {
+          setCenteredImageIndex(null)
+          setCenteredProjectIndex(null)
+          setCenteredColor(null)
+          setCenteredRandomly(false)
+          randomlyImageIndexRef.current = null
+        }
+      }
+    }
+    let rafId: number | null = null
+    const throttledScroll = () => {
+      if (rafId === null) rafId = requestAnimationFrame(() => { handleScroll(); rafId = null })
+    }
+    window.addEventListener('scroll', throttledScroll, { passive: true })
+    handleScroll()
+    return () => {
+      window.removeEventListener('scroll', throttledScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, images, projects, colors.length])
 
   const getRandomImageForColor = (colorKey: string): ImageItem | null => {
     const colorGroup = imagesByColor[colorKey]
@@ -274,12 +484,17 @@ export default function ImageList({ images, projects }: ImageListProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images.length, projects.length, colors.length, isSelectionMode])
 
+  const showImagePreview = isMobile ? centeredImageIndex !== null : hoveredIndex !== null
+  const showProjectPreview = isMobile
+    ? centeredProjectIndex !== null
+    : (hoveredProjectIndex !== null && hoveredProjectImageIndex !== null)
+  const showColorPreview = isMobile ? centeredColor : hoveredColor
+  const showRandomlyPreview = isMobile ? centeredRandomly : hoveredRandomly
+  const centeredColorLabel = centeredColor ? imagesByColor[centeredColor]?.label ?? centeredColor : null
+
   return (
     <>
-      <div className={`mobile-message ${isReady ? 'mobile-ready' : ''}`}>
-        Cratere, website for consultation only on Desktop.
-      </div>
-      <div className={`image-column ${isReady ? 'column-ready' : ''}`} style={{ marginTop: '150px' }}>
+      <div ref={imageColumnRef} className={`image-column ${isReady ? 'column-ready' : ''}`}>
         <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
           {isSelectionMode && selectionContext && (
@@ -290,22 +505,27 @@ export default function ImageList({ images, projects }: ImageListProps) {
             </span>
           )}
         </div>
-        <div className={`header-subtitle ${visibleRows.has('by-subject') ? 'row-visible' : 'row-hidden'}`}>By Subject</div>
+        <div
+          ref={bySubjectRef}
+          className={`header-subtitle ${visibleRows.has('by-subject') ? 'row-visible' : 'row-hidden'}`}
+        >
+          By Subject
+        </div>
         {images.map((image, index) => {
           const title = image.title || extractTitleFromFilename(image.asset, image.assetMetadata)
           
           return (
             <div
               key={image.index}
+              ref={(el) => { if (el) rowRefs.current.set(`image-${index}`, el) }}
               className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
+              data-image-index={index}
               onMouseEnter={() => {
-                if (visibleRows.has(`image-${index}`)) {
-                  setHoveredIndex(image.index)
-                }
+                if (!isMobile && visibleRows.has(`image-${index}`)) setHoveredIndex(image.index)
               }}
-              onMouseLeave={() => setHoveredIndex(null)}
-              onClick={() => handleImageClick(image)}
-              style={{ cursor: 'pointer' }}
+              onMouseLeave={() => !isMobile && setHoveredIndex(null)}
+              onClick={() => !isMobile && handleImageClick(image)}
+              style={{ cursor: isMobile ? 'default' : 'pointer' }}
             >
               <span className="image-number">{image.index}</span>
               <span className="image-title">{title}</span>
@@ -315,7 +535,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
         })}
         
         <div className={`projects-spacing ${visibleRows.has('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}>By Commisioner</div>
+        <div
+          ref={byCommissionerRef}
+          className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}
+        >
+          By Commisioner
+        </div>
         
         {projects.map((project, projectIndex) => {
           const validImages = project.images?.filter(img => img?.asset) || []
@@ -325,10 +550,13 @@ export default function ImageList({ images, projects }: ImageListProps) {
           return (
             <div
               key={projectIndex}
+              ref={(el) => { if (el) rowRefs.current.set(`project-${projectIndex}`, el) }}
               className={`project-row ${visibleRows.has(`project-${projectIndex}`) ? 'row-visible' : 'row-hidden'}`}
               onMouseLeave={() => {
-                setHoveredProjectIndex(null)
-                setHoveredProjectImageIndex(null)
+                if (!isMobile) {
+                  setHoveredProjectIndex(null)
+                  setHoveredProjectImageIndex(null)
+                }
               }}
             >
               <div className="project-content">
@@ -341,16 +569,15 @@ export default function ImageList({ images, projects }: ImageListProps) {
                   <span className="project-client">{project.client}</span>
                 </div>
               </div>
-              {imageCount > 0 && (
+              {imageCount > 0 && !isMobile && (
                 <div className="project-image-sections">
                   {validImages.map((image, imgIndex) => {
-                    // Create ImageItem from project image if needed
                     const imageItem: ImageItem | null = image.asset ? {
                       asset: image.asset,
                       title: image.title,
                       color: image.color,
                       year: project.year,
-                      index: images.length + projectIndex * 1000 + imgIndex, // Unique index
+                      index: images.length + projectIndex * 1000 + imgIndex,
                       assetMetadata: image.assetMetadata,
                     } : null
                     
@@ -359,6 +586,8 @@ export default function ImageList({ images, projects }: ImageListProps) {
                         key={imgIndex}
                         className="project-image-section"
                         style={{ width: `${100 / imageCount}%`, cursor: 'pointer' }}
+                        data-project-index={projectIndex}
+                        data-project-image-index={imgIndex}
                         onMouseEnter={() => {
                           if (visibleRows.has(`project-${projectIndex}`)) {
                             setHoveredProjectIndex(projectIndex)
@@ -383,95 +612,108 @@ export default function ImageList({ images, projects }: ImageListProps) {
           )
         })}
         
-        <div className={`colors-spacing ${visibleRows.has('colors-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`header-subtitle ${visibleRows.has('by-color') ? 'row-visible' : 'row-hidden'}`}>By Color</div>
-        
-        {colors.map((colorKey) => {
-          const colorGroup = imagesByColor[colorKey]
-          const formattedColor = colorGroup?.label ?? colorKey
-          return (
+        {!isMobile && (
+          <>
+            <div className={`colors-spacing ${visibleRows.has('colors-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+            <div className={`header-subtitle ${visibleRows.has('by-color') ? 'row-visible' : 'row-hidden'}`}>By Color</div>
+            {colors.map((colorKey) => {
+              const colorGroup = imagesByColor[colorKey]
+              const formattedColor = colorGroup?.label ?? colorKey
+              return (
+                <div
+                  key={colorKey}
+                  ref={(el) => { if (el) rowRefs.current.set(`color-${colorKey}`, el) }}
+                  className={`color-row ${visibleRows.has(`color-${colorKey}`) ? 'row-visible' : 'row-hidden'}`}
+                  data-color-key={colorKey}
+                  onMouseEnter={() => {
+                    if (visibleRows.has(`color-${colorKey}`)) {
+                      const randomImage = getRandomImageForColor(colorKey)
+                      setHoveredColor(colorKey)
+                      setHoveredColorImage(randomImage)
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredColor(null)
+                    setHoveredColorImage(null)
+                  }}
+                  onClick={() => {
+                    const imageToUse = hoveredColorImage
+                    if (imageToUse) {
+                      if (isSelectionMode) {
+                        handleImageSelect(imageToUse)
+                      } else {
+                        handleImageClick(imageToUse)
+                      }
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className="color-name">{formattedColor}</span>
+                </div>
+              )
+            })}
+            <div className={`randomly-spacing ${visibleRows.has('randomly-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
             <div
-              key={colorKey}
-              className={`color-row ${visibleRows.has(`color-${colorKey}`) ? 'row-visible' : 'row-hidden'}`}
+              ref={(el) => { if (el) rowRefs.current.set('randomly', el) }}
+              className={`randomly-row ${visibleRows.has('randomly') ? 'row-visible' : 'row-hidden'}`}
               onMouseEnter={() => {
-                if (visibleRows.has(`color-${colorKey}`)) {
-                  const randomImage = getRandomImageForColor(colorKey)
-                  setHoveredColor(colorKey)
-                  setHoveredColorImage(randomImage)
+                if (visibleRows.has('randomly')) {
+                  const validImages = images.filter(img => img?.asset)
+                  if (validImages.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * validImages.length)
+                    setRandomImageIndex(randomIndex)
+                    setHoveredRandomly(true)
+                  }
                 }
               }}
               onMouseLeave={() => {
-                setHoveredColor(null)
-                setHoveredColorImage(null)
+                setHoveredRandomly(false)
+                setRandomImageIndex(null)
               }}
               onClick={() => {
-                if (hoveredColorImage) {
-                  if (isSelectionMode) {
-                    handleImageSelect(hoveredColorImage)
-                  } else {
-                    handleImageClick(hoveredColorImage)
+                if (randomImageIndex !== null) {
+                  const validImages = images.filter(img => img?.asset)
+                  if (validImages[randomImageIndex]) {
+                    if (isSelectionMode) {
+                      handleImageSelect(validImages[randomImageIndex])
+                    } else {
+                      handleImageClick(validImages[randomImageIndex])
+                    }
                   }
                 }
               }}
               style={{ cursor: 'pointer' }}
             >
-              <span className="color-name">{formattedColor}</span>
+              <span className="randomly-text">Randomly</span>
             </div>
-          )
-        })}
+          </>
+        )}
         
-        <div className={`randomly-spacing ${visibleRows.has('randomly-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div
-          className={`randomly-row ${visibleRows.has('randomly') ? 'row-visible' : 'row-hidden'}`}
-          onMouseEnter={() => {
-            if (visibleRows.has('randomly')) {
-              const validImages = images.filter(img => img?.asset)
-              if (validImages.length > 0) {
-                const randomIndex = Math.floor(Math.random() * validImages.length)
-                setRandomImageIndex(randomIndex)
-                setHoveredRandomly(true)
-              }
-            }
-          }}
-          onMouseLeave={() => {
-            setHoveredRandomly(false)
-            setRandomImageIndex(null)
-          }}
-          onClick={() => {
-            if (randomImageIndex !== null) {
-              const validImages = images.filter(img => img?.asset)
-              if (validImages[randomImageIndex]) {
-                if (isSelectionMode) {
-                  handleImageSelect(validImages[randomImageIndex])
-                } else {
-                  handleImageClick(validImages[randomImageIndex])
-                }
-              }
-            }
-          }}
-          style={{ cursor: 'pointer' }}
-        >
-          <span className="randomly-text">Randomly</span>
-        </div>
-        
-        <div className={`empty-spacing ${visibleRows.has('empty-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div 
-          className={`empty-row ${visibleRows.has('empty') ? 'row-visible' : 'row-hidden'}`}
-          onClick={handleEmptyClick}
-          style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
-        >
-          <span className="empty-text">Empty</span>
-        </div>
+        {!isMobile && (
+          <>
+            <div className={`empty-spacing ${visibleRows.has('empty-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+            <div 
+              ref={(el) => { if (el) rowRefs.current.set('empty', el) }}
+              className={`empty-row ${visibleRows.has('empty') ? 'row-visible' : 'row-hidden'}`}
+              onClick={handleEmptyClick}
+              style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
+            >
+              <span className="empty-text">Empty</span>
+            </div>
+          </>
+        )}
         
         <div className={`about-spacing ${visibleRows.has('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}>
+        <div 
+          ref={(el) => { if (el) rowRefs.current.set('about', el) }}
+          className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}
+        >
           <button
             className="about-toggle"
-            onClick={() => setExpandedAbout(!expandedAbout)}
+            onClick={() => !isMobile && setExpandedAbout(!expandedAbout)}
           >
-            {expandedAbout ? (
+            {(expandedAbout || isMobile) ? (
               <div className="about-content">
-                <div className="about-line-first">-</div>
                 <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
                 <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
                 <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
@@ -487,50 +729,84 @@ export default function ImageList({ images, projects }: ImageListProps) {
         </div>
       </div>
       
-      {hoveredIndex !== null && (
-        <div className="image-preview-overlay">
-          <img
-            src={urlFor(images[hoveredIndex - 1].asset).width(2000).url()}
-            alt={images[hoveredIndex - 1].title || extractTitleFromFilename(images[hoveredIndex - 1].asset, images[hoveredIndex - 1].assetMetadata) || `Image ${hoveredIndex}`}
-            className="image-preview"
-          />
-        </div>
-      )}
+      {showImagePreview && (() => {
+        const imageIndex = isMobile ? centeredImageIndex : hoveredIndex
+        if (!imageIndex) return null
+        const image = images[imageIndex - 1]
+        if (!image?.asset) return null
+        return (
+          <div className="image-preview-overlay">
+            <img
+              src={urlFor(image.asset).width(2000).url()}
+              alt={image.title || extractTitleFromFilename(image.asset, image.assetMetadata) || `Image ${imageIndex}`}
+              className="image-preview"
+            />
+          </div>
+        )
+      })()}
       
-      {hoveredProjectIndex !== null && 
-       hoveredProjectImageIndex !== null && 
-       (() => {
-         const project = projects[hoveredProjectIndex]
+      {isMobile && centeredProjectIndex !== null && (() => {
+        const project = projects[centeredProjectIndex.projectIndex]
+        if (!project) return null
+        const validImages = project.images?.filter(img => img?.asset) || []
+        if (validImages.length === 0) return null
+        return (
+          <div key={`project-slider-${centeredProjectIndex.projectIndex}`} className="project-slider-overlay">
+            <div className="project-slider-scroll">
+              <div className="project-slider-inner">
+                {validImages.map((image, imgIndex) => (
+                  <div key={imgIndex} className="project-slider-item">
+                    <img
+                      src={urlFor(image.asset).width(2000).url()}
+                      alt={project.title || `Project ${centeredProjectIndex.projectIndex + 1} Image ${imgIndex + 1}`}
+                      className="project-slider-image"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+      
+      {!isMobile && showProjectPreview && (() => {
+         const project = projects[hoveredProjectIndex!]
          if (!project) return null
          const validImages = project.images?.filter(img => img?.asset) || []
-         const image = validImages[hoveredProjectImageIndex]
+         const image = validImages[hoveredProjectImageIndex!]
          if (!image?.asset) return null
          return (
            <div className="image-preview-overlay">
              <img
                src={urlFor(image.asset).width(2000).url()}
-               alt={project.title || `Project ${hoveredProjectIndex + 1} Image ${hoveredProjectImageIndex + 1}`}
+               alt={project.title || `Project ${hoveredProjectIndex! + 1} Image ${hoveredProjectImageIndex! + 1}`}
                className="image-preview"
              />
            </div>
          )
        })()}
       
-      {hoveredColor && hoveredColorImage && hoveredColorImage.asset && (
-        <div className="image-preview-overlay">
-          <img
-            src={urlFor(hoveredColorImage.asset).width(2000).url()}
-            alt={
-              hoveredColorImage.title ||
-              extractTitleFromFilename(hoveredColorImage.asset, hoveredColorImage.assetMetadata) ||
-              (hoveredColorLabel ? `Color ${hoveredColorLabel}` : 'Color preview')
-            }
-            className="image-preview"
-          />
-        </div>
-      )}
+      {showColorPreview && (() => {
+        const colorKey = isMobile ? centeredColor! : hoveredColor!
+        const colorLabel = isMobile ? centeredColorLabel : hoveredColorLabel
+        const randomImage = getRandomImageForColor(colorKey)
+        if (!randomImage?.asset) return null
+        return (
+          <div className="image-preview-overlay">
+            <img
+              src={urlFor(randomImage.asset).width(2000).url()}
+              alt={
+                randomImage.title ||
+                extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) ||
+                (colorLabel ? `Color ${colorLabel}` : 'Color preview')
+              }
+              className="image-preview"
+            />
+          </div>
+        )
+      })()}
       
-      {hoveredRandomly && randomImageIndex !== null && (() => {
+      {showRandomlyPreview && randomImageIndex !== null && (() => {
         const validImages = images.filter(img => img?.asset)
         if (validImages.length === 0 || randomImageIndex >= validImages.length) return null
         const randomImage = validImages[randomImageIndex]
@@ -547,34 +823,23 @@ export default function ImageList({ images, projects }: ImageListProps) {
       })()}
       
       <style jsx>{`
-        .mobile-message {
-          visibility: hidden;
-          display: none;
-        }
-        
-        @media (max-width: 768px) {
-          .mobile-message.mobile-ready {
-            visibility: visible;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            text-align: center;
-            padding: 20px;
-            font-size: 14px;
-            line-height: 130%;
-          }
-          
-          .image-column {
-            display: none;
-          }
-        }
-        
         .image-column {
           width: 30vw;
           margin: 150px auto 0;
           position: relative;
           z-index: 10;
+        }
+        
+        @media (max-width: 768px) {
+          .image-column {
+            width: calc(100% - 40px);
+            margin-left: 20px;
+            margin-right: 20px;
+            margin-top: 0;
+            padding-top: 10px;
+            position: relative;
+            z-index: 10;
+          }
         }
         
         .row-hidden {
@@ -720,11 +985,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
           text-align: left;
         }
         
-        .about-line-first {
-          line-height: 130%;
-          margin-bottom: 0;
-        }
-        
         .about-line {
           line-height: 130%;
           margin-bottom: calc(1em * 1.3);
@@ -826,6 +1086,73 @@ export default function ImageList({ images, projects }: ImageListProps) {
           width: auto;
           height: auto;
           object-fit: contain;
+        }
+        
+        @media (max-width: 768px) {
+          .image-preview {
+            max-width: 80vw;
+          }
+        }
+        
+        @media (max-width: 768px) {
+          .project-slider-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 11;
+            pointer-events: auto;
+            width: 100vw;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: visible;
+            mix-blend-mode: multiply;
+          }
+          
+          .project-slider-scroll {
+            overflow-x: auto;
+            overflow-y: visible;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            touch-action: pan-x pan-y;
+            width: 100vw;
+            max-height: 80vh;
+          }
+          
+          .project-slider-scroll::-webkit-scrollbar {
+            display: none;
+          }
+          
+          .project-slider-inner {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 20vw;
+            flex-wrap: nowrap;
+            width: max-content;
+            padding-left: 10vw;
+            padding-right: 10vw;
+          }
+          
+          .project-slider-item {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 80vw;
+            min-width: 80vw;
+          }
+          
+          .project-slider-image {
+            width: 80vw;
+            max-height: 80vh;
+            height: auto;
+            object-fit: contain;
+            display: block;
+          }
         }
       `}</style>
     </>
