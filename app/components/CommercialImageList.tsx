@@ -187,12 +187,14 @@ export default function CommercialImageList({ images, projects }: CommercialImag
       // Check image rows
       let closestRow: { id: string; distance: number } | null = null
       
+      const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
+
       // Check "By Subject" header
       if (bySubjectRef.current) {
         const rect = bySubjectRef.current.getBoundingClientRect()
         const center = rect.top + rect.height / 2
         const distance = Math.abs(center - viewportCenter)
-        if (!closestRow || distance < closestRow.distance) {
+        if (distance < getMinDistance()) {
           closestRow = { id: 'by-subject', distance }
         }
       }
@@ -205,7 +207,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           const rect = element.getBoundingClientRect()
           const center = rect.top + rect.height / 2
           const distance = Math.abs(center - viewportCenter)
-          if (!closestRow || distance < closestRow.distance) {
+          if (distance < getMinDistance()) {
             closestRow = { id: rowId, distance }
           }
         }
@@ -219,7 +221,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           const rect = element.getBoundingClientRect()
           const center = rect.top + rect.height / 2
           const distance = Math.abs(center - viewportCenter)
-          if (!closestRow || distance < closestRow.distance) {
+          if (distance < getMinDistance()) {
             closestRow = { id: rowId, distance }
           }
         }
@@ -233,7 +235,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           const rect = element.getBoundingClientRect()
           const center = rect.top + rect.height / 2
           const distance = Math.abs(center - viewportCenter)
-          if (!closestRow || distance < closestRow.distance) {
+          if (distance < getMinDistance()) {
             closestRow = { id: rowId, distance }
           }
         }
@@ -245,7 +247,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
         const rect = randomlyElement.getBoundingClientRect()
         const center = rect.top + rect.height / 2
         const distance = Math.abs(center - viewportCenter)
-        if (!closestRow || distance < closestRow.distance) {
+        if (distance < getMinDistance()) {
           closestRow = { id: 'randomly', distance }
         }
       }

@@ -12,9 +12,9 @@ export function UploadWithFilenameAssetSource(props: {
   onSelect: (assets: Array<{ kind: 'assetDocumentId'; value: string }>) => void
   onClose: () => void
   selectionType: 'single' | 'multiple'
-  assetType: 'file' | 'image'
+  assetType?: 'file' | 'image' | string
 }) {
-  const { onSelect, onClose, selectionType, assetType } = props
+  const { onSelect, onClose, selectionType, assetType = 'image' } = props
   const client = useClient({ apiVersion: '2024-01-01' })
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
