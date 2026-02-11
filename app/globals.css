@@ -1,0 +1,69 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  color: #000;
+  leading-trim: both;
+  text-edge: cap;
+  font-family: Helvetica;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 130%; /* 20.8px */
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  background: white;
+}
+
+/* Prevent flash of unstyled content */
+.image-column {
+  visibility: hidden;
+}
+
+.image-column.column-ready {
+  visibility: visible;
+}
+
+/* Hide mobile message by default to prevent flash on page load */
+.mobile-message {
+  visibility: hidden !important;
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .mobile-message.mobile-ready {
+    visibility: visible !important;
+    display: flex !important;
+  }
+}
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
+}
+
+/* Hide Cursor IDE browser extension overlays */
+[data-cursor-ide],
+[data-cursor-ide] *,
+*[class*="cursor-ide"],
+*[class*="cursor-ide"] *,
+*[id*="cursor-ide"],
+*[id*="cursor-ide"] * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
