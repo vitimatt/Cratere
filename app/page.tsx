@@ -14,7 +14,8 @@ async function getProjects() {
       images[] {
         asset,
         "assetMetadata": asset-> {
-          originalFilename
+          originalFilename,
+          "dimensions": metadata.dimensions
         },
         title,
         color

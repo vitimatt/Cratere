@@ -421,11 +421,56 @@ function DesignerPageContent() {
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
+          gap: '20px',
         }}
       >
+        <button
+          onClick={() => {
+            const prevPage = currentPage <= 2 ? 1 : currentPage - 2
+            if (currentPage > 1) {
+              setCurrentPage(prevPage)
+              router.push(`/designer?page=${prevPage}`)
+            }
+          }}
+          disabled={currentPage <= 1}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: currentPage <= 1 ? 'default' : 'pointer',
+            fontSize: '14px',
+            color: currentPage <= 1 ? '#999' : '#000',
+            fontFamily: 'inherit',
+            textDecoration: 'none',
+          }}
+        >
+          Previous
+        </button>
         <div style={{ fontSize: '14px', color: '#000' }}>
           {isSinglePage ? `${currentPage}` : `${currentPage}-${currentPage + 1}`} / {totalPages}
         </div>
+        <button
+          onClick={() => {
+            const nextPage = currentPage === 1 ? 2 : Math.min(totalPages, currentPage + 2)
+            if (currentPage < totalPages) {
+              setCurrentPage(nextPage)
+              router.push(`/designer?page=${nextPage}`)
+            }
+          }}
+          disabled={currentPage >= totalPages}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: currentPage >= totalPages ? 'default' : 'pointer',
+            fontSize: '14px',
+            color: currentPage >= totalPages ? '#999' : '#000',
+            fontFamily: 'inherit',
+            textDecoration: 'none',
+          }}
+        >
+          Next
+        </button>
       </div>
     </div>
   )

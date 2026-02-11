@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { urlFor } from '../../lib/imageUrl'
 
 interface ImageItem {
@@ -54,7 +54,48 @@ export default function CommercialImageList({ images, projects }: CommercialImag
   // Refs for tracking row positions
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map())
   const bySubjectRef = useRef<HTMLDivElement>(null)
-  const horizontalScrollRef = useRef<HTMLDivElement>(null)
+  const byCommissionerRef = useRef<HTMLDivElement>(null)
+  const mousePosRef = useRef<{ x: number; y: number } | null>(null)
+  const imageColumnRef = useRef<HTMLDivElement | null>(null)
+
+  const updateHoverFromPosition = useCallback(() => {
+    if (isMobile) return
+    const pos = mousePosRef.current
+    if (!pos || !imageColumnRef.current) return
+    const el = document.elementFromPoint(pos.x, pos.y)
+    if (!el || !imageColumnRef.current.contains(el)) {
+      setHoveredIndex(null)
+      setHoveredProjectIndex(null)
+      setHoveredProjectImageIndex(null)
+      return
+    }
+    const imageRow = el.closest('.image-row') as HTMLElement | null
+    if (imageRow) {
+      const idx = imageRow.getAttribute('data-image-index')
+      if (idx !== null && visibleRows.has(`image-${idx}`)) {
+        const index = parseInt(idx, 10)
+        setHoveredIndex(images[index]?.index ?? null)
+        setHoveredProjectIndex(null)
+        setHoveredProjectImageIndex(null)
+        return
+      }
+    }
+    const projectSection = el.closest('.project-image-section') as HTMLElement | null
+    if (projectSection) {
+      const pIdx = projectSection.getAttribute('data-project-index')
+      const imgIdx = projectSection.getAttribute('data-project-image-index')
+      if (pIdx !== null && imgIdx !== null && visibleRows.has(`project-${pIdx}`)) {
+        setHoveredIndex(null)
+        setHoveredProjectIndex(parseInt(pIdx, 10))
+        setHoveredProjectImageIndex(parseInt(imgIdx, 10))
+        return
+      }
+    }
+    setHoveredIndex(null)
+    setHoveredProjectIndex(null)
+    setHoveredProjectImageIndex(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images, visibleRows, isMobile])
 
   const extractTitleFromFilename = (asset: any, assetMetadata?: any): string => {
     let filename = ''
@@ -176,132 +217,86 @@ export default function CommercialImageList({ images, projects }: CommercialImag
       window.removeEventListener('resize', checkMobile)
     }
   }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY }
+    }
+    const handleScroll = () => {
+      requestAnimationFrame(updateHoverFromPosition)
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('scroll', handleScroll)
+    }
+  }, [updateHoverFromPosition])
   
-  // Scroll handler for mobile - find which row is at vertical center
+  // Scroll handler for mobile - find which row is at top line (15px from viewport, same as homepage)
   useEffect(() => {
     if (!isMobile) return
-    
+    const detectionLine = 15
     const handleScroll = () => {
-      const viewportCenter = window.innerHeight / 2
-      
-      // Check image rows
       let closestRow: { id: string; distance: number } | null = null
-      
       const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
-
-      // Check "By Subject" header
+      const distToLine = (rect: DOMRect) => {
+        if (rect.top <= detectionLine && rect.bottom >= detectionLine) return 0
+        return Math.abs(rect.top - detectionLine)
+      }
       if (bySubjectRef.current) {
         const rect = bySubjectRef.current.getBoundingClientRect()
-        const center = rect.top + rect.height / 2
-        const distance = Math.abs(center - viewportCenter)
+        const distance = distToLine(rect)
+        if (distance < getMinDistance()) closestRow = { id: 'by-subject', distance }
+      }
+      images.forEach((_, index) => {
+        const el = rowRefs.current.get(`image-${index}`)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const distance = distToLine(rect)
+          if (distance < getMinDistance()) closestRow = { id: `image-${index}`, distance }
+        }
+      })
+      if (byCommissionerRef.current) {
+        const rect = byCommissionerRef.current.getBoundingClientRect()
+        const distance = distToLine(rect)
         if (distance < getMinDistance()) {
-          closestRow = { id: 'by-subject', distance }
+          const firstWithImages = projects.findIndex(p => p?.images?.some(img => img?.asset))
+          if (firstWithImages >= 0) closestRow = { id: `project-${firstWithImages}`, distance }
         }
       }
-      
-      // Check all image rows
-      images.forEach((image, index) => {
-        const rowId = `image-${index}`
-        const element = rowRefs.current.get(rowId)
-        if (element) {
-          const rect = element.getBoundingClientRect()
-          const center = rect.top + rect.height / 2
-          const distance = Math.abs(center - viewportCenter)
-          if (distance < getMinDistance()) {
-            closestRow = { id: rowId, distance }
-          }
+      projects.forEach((_, projectIndex) => {
+        const el = rowRefs.current.get(`project-${projectIndex}`)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const distance = distToLine(rect)
+          if (distance < getMinDistance()) closestRow = { id: `project-${projectIndex}`, distance }
         }
       })
-      
-      // Check project rows
-      projects.forEach((project, projectIndex) => {
-        const rowId = `project-${projectIndex}`
-        const element = rowRefs.current.get(rowId)
-        if (element) {
-          const rect = element.getBoundingClientRect()
-          const center = rect.top + rect.height / 2
-          const distance = Math.abs(center - viewportCenter)
-          if (distance < getMinDistance()) {
-            closestRow = { id: rowId, distance }
-          }
-        }
-      })
-      
-      // Check color rows
-      colors.forEach((color) => {
-        const rowId = `color-${color}`
-        const element = rowRefs.current.get(rowId)
-        if (element) {
-          const rect = element.getBoundingClientRect()
-          const center = rect.top + rect.height / 2
-          const distance = Math.abs(center - viewportCenter)
-          if (distance < getMinDistance()) {
-            closestRow = { id: rowId, distance }
-          }
-        }
-      })
-      
-      // Check randomly row
-      const randomlyElement = rowRefs.current.get('randomly')
-      if (randomlyElement) {
-        const rect = randomlyElement.getBoundingClientRect()
-        const center = rect.top + rect.height / 2
-        const distance = Math.abs(center - viewportCenter)
-        if (distance < getMinDistance()) {
-          closestRow = { id: 'randomly', distance }
-        }
+      const aboutEl = rowRefs.current.get('about')
+      if (aboutEl) {
+        const rect = aboutEl.getBoundingClientRect()
+        const distance = distToLine(rect)
+        if (distance < getMinDistance()) closestRow = { id: 'about', distance }
       }
-      
       // Update state based on closest row
       if (closestRow) {
         if (closestRow.id.startsWith('image-')) {
           const index = parseInt(closestRow.id.replace('image-', ''))
           setCenteredImageIndex(images[index]?.index || null)
           setCenteredProjectIndex(null)
-          setCenteredColor(null)
-          setCenteredRandomly(false)
         } else if (closestRow.id.startsWith('project-')) {
           const projectIndex = parseInt(closestRow.id.replace('project-', ''))
           const project = projects[projectIndex]
-          if (project) {
-            const validImages = project.images?.filter(img => img?.asset) || []
-            if (validImages.length > 0) {
-              // Set project index (imageIndex not needed since we show all images)
-              setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
-              setCenteredImageIndex(null)
-              setCenteredColor(null)
-              setCenteredRandomly(false)
-            }
-          }
-        } else if (closestRow.id.startsWith('color-')) {
-          const color = closestRow.id.replace('color-', '')
-          setCenteredColor(color)
-          setCenteredImageIndex(null)
-          setCenteredProjectIndex(null)
-          setCenteredRandomly(false)
-        } else if (closestRow.id === 'randomly') {
-          const validImages = images.filter(img => img?.asset)
-          if (validImages.length > 0) {
-            // Only set random image if not already set, to avoid flickering
-            if (randomImageIndex === null) {
-              const randomIndex = Math.floor(Math.random() * validImages.length)
-              setRandomImageIndex(randomIndex)
-            }
-            setCenteredRandomly(true)
+          if (project?.images?.some(img => img?.asset)) {
+            setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
             setCenteredImageIndex(null)
+          } else {
             setCenteredProjectIndex(null)
-            setCenteredColor(null)
           }
         } else {
-          // Reset random image when leaving randomly row
-          if (centeredRandomly) {
-            setRandomImageIndex(null)
-          }
-          // Reset all when on header or other non-image rows
           setCenteredImageIndex(null)
           setCenteredProjectIndex(null)
-          setCenteredColor(null)
-          setCenteredRandomly(false)
         }
       }
     }
@@ -327,24 +322,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, images, projects, colors.length])
-  
-  // Scroll horizontal container to center when project is centered
-  useEffect(() => {
-    if (!isMobile || !centeredProjectIndex || !horizontalScrollRef.current) return
-    
-    // Scroll to center the first image (10vw padding centers it)
-    const scrollContainer = horizontalScrollRef.current
-    scrollContainer.scrollLeft = 0
-    
-    // Ensure the container is scrollable
-    const container = scrollContainer.querySelector('.project-images-container') as HTMLElement
-    if (container) {
-      // Force a reflow to ensure scrolling works
-      container.offsetHeight
-    }
-  }, [isMobile, centeredProjectIndex])
-  
+  }, [isMobile, images, projects])
 
   const getRandomImageForColor = (colorKey: string): ImageItem | null => {
     const colorGroup = imagesByColor[colorKey]
@@ -402,11 +380,6 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           'projects-spacing',
           'by-commissioner',
           ...projects.map((_, i) => `project-${i}`),
-          'colors-spacing',
-          'by-color',
-          ...colors.map((color) => `color-${color}`),
-          'randomly-spacing',
-          'randomly',
           'about-spacing',
           'about',
         ]
@@ -424,11 +397,11 @@ export default function CommercialImageList({ images, projects }: CommercialImag
       if (timer2) clearTimeout(timer2)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length, projects.length, colors.length])
+  }, [images.length, projects.length])
 
   return (
     <>
-      <div className={`image-column ${isReady ? 'column-ready' : ''}`} style={{ marginTop: '150px' }}>
+      <div ref={imageColumnRef} className={`image-column ${isReady ? 'column-ready' : ''}`}>
         <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
         </div>
@@ -450,6 +423,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
               }}
               className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
               data-row-id={`image-${index}`}
+              data-image-index={index}
               onMouseEnter={() => !isMobile && setHoveredIndex(image.index)}
               onMouseLeave={() => !isMobile && setHoveredIndex(null)}
             >
@@ -461,7 +435,12 @@ export default function CommercialImageList({ images, projects }: CommercialImag
         })}
         
         <div className={`projects-spacing ${visibleRows.has('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}>By Commisioner</div>
+        <div
+          ref={byCommissionerRef}
+          className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}
+        >
+          By Commisioner
+        </div>
         
         {projects.map((project, projectIndex) => {
           const validImages = project.images?.filter(img => img?.asset) || []
@@ -502,6 +481,8 @@ export default function CommercialImageList({ images, projects }: CommercialImag
                         key={imgIndex}
                         className="project-image-section"
                         style={{ width: `${100 / imageCount}%`, cursor: hasPdf ? 'pointer' : 'default' }}
+                        data-project-index={projectIndex}
+                        data-project-image-index={imgIndex}
                         onMouseEnter={() => {
                           if (!isMobile) {
                             setHoveredProjectIndex(projectIndex)
@@ -522,65 +503,43 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           )
         })}
         
-        <div className={`colors-spacing ${visibleRows.has('colors-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`header-subtitle ${visibleRows.has('by-color') ? 'row-visible' : 'row-hidden'}`}>By Color</div>
-        
-        {colors.map((colorKey) => {
-          const colorGroup = imagesByColor[colorKey]
-          const formattedColor = colorGroup?.label ?? colorKey
-          return (
-            <div
-              key={colorKey}
-              ref={(el) => {
-                if (el) rowRefs.current.set(`color-${colorKey}`, el)
-              }}
-              className={`color-row ${visibleRows.has(`color-${colorKey}`) ? 'row-visible' : 'row-hidden'}`}
-              data-row-id={`color-${colorKey}`}
-              onMouseEnter={() => !isMobile && setHoveredColor(colorKey)}
-              onMouseLeave={() => !isMobile && setHoveredColor(null)}
-            >
-              <span className="color-name">{formattedColor}</span>
-            </div>
-          )
-        })}
-        
-        <div className={`randomly-spacing ${visibleRows.has('randomly-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div
-          ref={(el) => {
-            if (el) rowRefs.current.set('randomly', el)
-          }}
-          className={`randomly-row ${visibleRows.has('randomly') ? 'row-visible' : 'row-hidden'}`}
-          data-row-id="randomly"
-          onMouseEnter={() => {
-            if (!isMobile) {
-              const validImages = images.filter(img => img?.asset)
-              if (validImages.length > 0) {
-                const randomIndex = Math.floor(Math.random() * validImages.length)
-                setRandomImageIndex(randomIndex)
-                setHoveredRandomly(true)
-              }
-            }
-          }}
-          onMouseLeave={() => {
-            if (!isMobile) {
-              setHoveredRandomly(false)
-              setRandomImageIndex(null)
-            }
-          }}
-        >
-          <span className="randomly-text">Randomly</span>
-        </div>
-        
         <div className={`about-spacing ${visibleRows.has('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-        <div className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}>
+        <div
+          ref={(el) => { if (el) rowRefs.current.set('about', el) }}
+          className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}
+        >
           <div className="about-content">
-            <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
-            <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
-            <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
-            <div className="about-line">studio@cratere.studio M: +39 3208740367</div>
-            <div className="about-line">Viale Abruzzi 32</div>
+            <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
             <div className="about-line-spacing"></div>
-            <div className="about-line">Website: Matteo Viti</div>
+            <div className="about-line">Download portfolio</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">Selected Pubblications</div>
+            <div className="about-line about-line-tight">Arxipelag - Sul Sentiero</div>
+            <div className="about-line about-line-tight">Phroom, Zone Magazine - Teleonomia</div>
+            <div className="about-line about-line-tight">Perimetro - La Cattedrale</div>
+            <div className="about-line about-line-tight">C41 - Boring Cactus</div>
+            <div className="about-line about-line-tight">Highsnobiety, Nss sport, Hypebeast - Nike ACG Train</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">Selected Exhibitions</div>
+            <div className="about-line about-line-tight">@Daste Bergamo, &quot;One Eye Sees, The Other Feels&quot;, 30/04/2022 - 14/05/2022</div>
+            <div className="about-line about-line-tight">@Studio Cratere, &quot;Everything Be Revealed In Time&quot;, 05/04/2024 - 03/05/2024</div>
+            <div className="about-line about-line-tight">@Studio Cratere, &quot;Lucid Dreams&quot;, 13/06/2024 - 12/07/2024</div>
+            <div className="about-line about-line-tight">@Studio Cratere, &quot;by PHONE&quot;, 23/10/2024 - review on Phroom and Outpump</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">Commissions</div>
+            <div className="about-line about-line-tight">Represented by C41.eu</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">studio@cratere.studio</div>
+            <div className="about-line about-line-tight">M: +39 3208740367</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">General Info</div>
+            <div className="about-line about-line-tight">contact@cratere.studio</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">Address</div>
+            <div className="about-line about-line-tight">Viale Abruzzi 32</div>
+            <div className="about-line-spacing"></div>
+            <div className="about-line about-line-tight">Website</div>
+            <div className="about-line about-line-tight">Matteo Viti</div>
           </div>
         </div>
       </div>
@@ -619,65 +578,27 @@ export default function CommercialImageList({ images, projects }: CommercialImag
         )
       })()}
       
-      {/* Mobile: Show all project images horizontally when centered */}
+      {/* Mobile: Show project slider in center (same as homepage) */}
       {isMobile && centeredProjectIndex !== null && (() => {
         const project = projects[centeredProjectIndex.projectIndex]
         if (!project) return null
         const validImages = project.images?.filter(img => img?.asset) || []
         if (validImages.length === 0) return null
-        
         return (
-          <div 
-            ref={horizontalScrollRef}
-            className="project-images-horizontal-scroll"
-          >
-            <div className="project-images-container">
-              {validImages.map((image, imgIndex) => (
-                <div key={imgIndex} className="project-image-item">
-                  <img
-                    src={urlFor(image.asset).width(2000).url()}
-                    alt={project.title || `Project ${centeredProjectIndex.projectIndex + 1} Image ${imgIndex + 1}`}
-                    className="project-image-horizontal"
-                  />
-                </div>
-              ))}
+          <div key={`project-slider-${centeredProjectIndex.projectIndex}`} className="project-slider-overlay">
+            <div className="project-slider-scroll">
+              <div className="project-slider-inner">
+                {validImages.map((image, imgIndex) => (
+                  <div key={imgIndex} className="project-slider-item">
+                    <img
+                      src={urlFor(image.asset).width(2000).url()}
+                      alt={project.title || `Project ${centeredProjectIndex.projectIndex + 1} Image ${imgIndex + 1}`}
+                      className="project-slider-image"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )
-      })()}
-      
-      {((isMobile && centeredColor) || (!isMobile && hoveredColor)) && (() => {
-        const colorKey = isMobile ? centeredColor! : hoveredColor!
-        const colorLabel = isMobile ? centeredColorLabel : hoveredColorLabel
-        const randomImage = getRandomImageForColor(colorKey)
-        if (!randomImage?.asset) return null
-        return (
-          <div className="image-preview-overlay">
-            <img
-              src={urlFor(randomImage.asset).width(2000).url()}
-              alt={
-                randomImage.title ||
-                extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) ||
-                (colorLabel ? `Color ${colorLabel}` : 'Color preview')
-              }
-              className="image-preview"
-            />
-          </div>
-        )
-      })()}
-      
-      {((isMobile && centeredRandomly) || (!isMobile && hoveredRandomly)) && randomImageIndex !== null && (() => {
-        const validImages = images.filter(img => img?.asset)
-        if (validImages.length === 0 || randomImageIndex >= validImages.length) return null
-        const randomImage = validImages[randomImageIndex]
-        if (!randomImage?.asset) return null
-        return (
-          <div className="image-preview-overlay">
-            <img
-              src={urlFor(randomImage.asset).width(2000).url()}
-              alt={randomImage.title || extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) || 'Random Image'}
-              className="image-preview"
-            />
           </div>
         )
       })()}
@@ -696,7 +617,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
             margin-left: 20px;
             margin-right: 20px;
             margin-top: 0;
-            padding-top: 50vh;
+            padding-top: 15px;
             position: relative;
             z-index: 10;
           }
@@ -816,8 +737,12 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           margin-bottom: calc(1em * 1.3);
         }
         
+        .about-line-tight {
+          margin-bottom: 0;
+        }
+        
         .about-line-spacing {
-          margin-top: calc(1em * 1.3 * 3);
+          margin-top: calc(1em * 1.3);
         }
         
         .project-row {
@@ -926,58 +851,63 @@ export default function CommercialImageList({ images, projects }: CommercialImag
         }
         
         @media (max-width: 768px) {
-          .project-images-horizontal-scroll {
+          .project-slider-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 5;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 11;
             pointer-events: auto;
             width: 100vw;
-            height: 100vh;
-            overflow-x: scroll;
-            overflow-y: hidden;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: visible;
+            mix-blend-mode: multiply;
+          }
+          
+          .project-slider-scroll {
+            overflow-x: auto;
+            overflow-y: visible;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
             -ms-overflow-style: none;
             touch-action: pan-x pan-y;
-            overscroll-behavior: none;
-            overscroll-behavior-x: none;
-            overscroll-behavior-y: none;
+            width: 100vw;
+            max-height: 80vh;
           }
           
-          .project-images-horizontal-scroll::-webkit-scrollbar {
+          .project-slider-scroll::-webkit-scrollbar {
             display: none;
           }
           
-          .project-images-container {
+          .project-slider-inner {
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            height: 100vh;
-            padding-left: 10vw;
-            padding-right: 10vw;
             gap: 20vw;
             flex-wrap: nowrap;
             width: max-content;
+            padding-left: 10vw;
+            padding-right: 10vw;
           }
           
-          .project-image-item {
+          .project-slider-item {
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
             width: 80vw;
             min-width: 80vw;
-            height: 100vh;
           }
           
-          .project-image-horizontal {
+          .project-slider-image {
             width: 80vw;
             max-height: 80vh;
             height: auto;
             object-fit: contain;
             display: block;
-            pointer-events: none;
           }
         }
       `}</style>

@@ -31,6 +31,28 @@ async function getProjects() {
   return projects
 }
 
+// Helper function to extract title from filename (same as homepage)
+function extractTitleFromFilename(asset: any, assetMetadata?: any, imageTitle?: string): string {
+  if (imageTitle) return imageTitle
+  let filename = ''
+  if (assetMetadata?.originalFilename) {
+    filename = assetMetadata.originalFilename
+  } else if (asset?.originalFilename) {
+    filename = asset.originalFilename
+  } else if (asset?._ref) {
+    const parts = asset._ref.split('-')
+    if (parts.length > 0) filename = parts[parts.length - 1]
+  }
+  if (!filename) return 'Untitled'
+  filename = filename.replace(/\.[^/.]+$/, '')
+  const parts = filename.split('-')
+  if (parts.length > 1) {
+    const titlePart = parts.slice(0, -1).join('-')
+    return titlePart.replace(/_/g, ' ').trim()
+  }
+  return filename.replace(/_/g, ' ').trim()
+}
+
 export default async function Commercial() {
   const projects = await getProjects()
   
@@ -60,6 +82,18 @@ export default async function Commercial() {
         }
       })
     }
+  })
+
+  // Sort images alphabetically by subject (title) - same as homepage
+  allImages.sort((a, b) => {
+    const titleA = extractTitleFromFilename(a.asset, a.assetMetadata, a.title).toLowerCase()
+    const titleB = extractTitleFromFilename(b.asset, b.assetMetadata, b.title).toLowerCase()
+    return titleA.localeCompare(titleB)
+  })
+
+  // Re-index images after sorting
+  allImages.forEach((image, index) => {
+    image.index = index + 1
   })
 
   return (

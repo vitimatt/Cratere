@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { urlFor } from '../../lib/imageUrl'
-import { useDesigner } from '../contexts/DesignerContext'
+import { useDesigner, LayoutType } from '../contexts/DesignerContext'
 
 interface ImageItem {
   asset: any
@@ -33,7 +33,7 @@ interface ImageListProps {
 
 export default function ImageList({ images, projects }: ImageListProps) {
   const router = useRouter()
-  const { selectionContext, setSelectedImage, setSelectionContext } = useDesigner()
+  const { selectionContext, setSelectedImage, setSelectionContext, getLayout } = useDesigner()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
   const [hoveredProjectImageIndex, setHoveredProjectImageIndex] = useState<number | null>(null)
@@ -282,7 +282,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
   // Scroll handler for mobile - find which row is at top line of text (20px from viewport top, matching side gap)
   useEffect(() => {
     if (!isMobile) return
-    const detectionLine = 10 // Same as top padding
+    const detectionLine = 15 // Same as top padding
     const handleScroll = () => {
       let closestRow: { id: string; distance: number } | null = null
       const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
@@ -371,8 +371,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const getRandomImageForColor = (colorKey: string): ImageItem | null => {
     const colorGroup = imagesByColor[colorKey]
     if (!colorGroup || colorGroup.images.length === 0) return null
-    const randomIndex = Math.floor(Math.random() * colorGroup.images.length)
-    return colorGroup.images[randomIndex]
+    let pool = colorGroup.images
+    if (is4VerticalLayout()) pool = pool.filter(img => !isImageHorizontal(img))
+    else if (is4HorizontalLayout()) pool = pool.filter(img => isImageHorizontal(img))
+    if (pool.length === 0) return null
+    const randomIndex = Math.floor(Math.random() * pool.length)
+    return pool[randomIndex]
   }
 
   const handleImageSelect = (image: ImageItem | null) => {
@@ -397,9 +401,32 @@ export default function ImageList({ images, projects }: ImageListProps) {
     router.push(`/designer?page=${targetPage}`)
   }
 
+  const getSpreadLayout = (): LayoutType | null => {
+    if (!selectionContext) return null
+    const spreadPageNumber = selectionContext.pageNumber % 2 === 0 ? selectionContext.pageNumber : selectionContext.pageNumber - 1
+    return getLayout(spreadPageNumber) as LayoutType
+  }
+
+  const is4VerticalLayout = (): boolean => getSpreadLayout() === '4-vertical'
+  const is4HorizontalLayout = (): boolean => getSpreadLayout() === '4-horizontal'
+
+  const isImageHorizontal = (image: ImageItem): boolean => {
+    const dims = image.assetMetadata?.dimensions || image.asset?.metadata?.dimensions
+    if (!dims?.width || !dims?.height) return false
+    return dims.width > dims.height
+  }
+
+  const canSelectImage = (image: ImageItem): boolean => {
+    if (!isSelectionMode) return true
+    const layout = getSpreadLayout()
+    if (layout === '4-vertical') return !isImageHorizontal(image)
+    if (layout === '4-horizontal') return isImageHorizontal(image)
+    return true
+  }
+
   const handleImageClick = (image: ImageItem) => {
     if (isSelectionMode) {
-      // If in selection mode, use the existing handler
+      if (!canSelectImage(image)) return
       handleImageSelect(image)
     } else {
       // If not in selection mode, assign to cover and navigate to designer
@@ -513,6 +540,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
         </div>
         {images.map((image, index) => {
           const title = image.title || extractTitleFromFilename(image.asset, image.assetMetadata)
+          const disabled = isSelectionMode && !canSelectImage(image)
           
           return (
             <div
@@ -521,11 +549,14 @@ export default function ImageList({ images, projects }: ImageListProps) {
               className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
               data-image-index={index}
               onMouseEnter={() => {
-                if (!isMobile && visibleRows.has(`image-${index}`)) setHoveredIndex(image.index)
+                if (!isMobile && !disabled && visibleRows.has(`image-${index}`)) setHoveredIndex(image.index)
               }}
               onMouseLeave={() => !isMobile && setHoveredIndex(null)}
               onClick={() => !isMobile && handleImageClick(image)}
-              style={{ cursor: isMobile ? 'default' : 'pointer' }}
+              style={{ 
+                cursor: isMobile ? 'default' : (disabled ? 'default' : 'pointer'),
+                opacity: disabled ? 0.4 : 1,
+              }}
             >
               <span className="image-number">{image.index}</span>
               <span className="image-title">{title}</span>
@@ -580,22 +611,27 @@ export default function ImageList({ images, projects }: ImageListProps) {
                       index: images.length + projectIndex * 1000 + imgIndex,
                       assetMetadata: image.assetMetadata,
                     } : null
+                    const disabled = imageItem && isSelectionMode && !canSelectImage(imageItem)
                     
                     return (
                       <div
                         key={imgIndex}
                         className="project-image-section"
-                        style={{ width: `${100 / imageCount}%`, cursor: 'pointer' }}
+                        style={{ 
+                          width: `${100 / imageCount}%`, 
+                          cursor: disabled ? 'default' : 'pointer',
+                          opacity: disabled ? 0.4 : 1,
+                        }}
                         data-project-index={projectIndex}
                         data-project-image-index={imgIndex}
                         onMouseEnter={() => {
-                          if (visibleRows.has(`project-${projectIndex}`)) {
+                          if (!disabled && visibleRows.has(`project-${projectIndex}`)) {
                             setHoveredProjectIndex(projectIndex)
                             setHoveredProjectImageIndex(imgIndex)
                           }
                         }}
                         onClick={() => {
-                          if (imageItem) {
+                          if (imageItem && !disabled) {
                             if (isSelectionMode) {
                               handleImageSelect(imageItem)
                             } else {
@@ -619,6 +655,9 @@ export default function ImageList({ images, projects }: ImageListProps) {
             {colors.map((colorKey) => {
               const colorGroup = imagesByColor[colorKey]
               const formattedColor = colorGroup?.label ?? colorKey
+              const hasNoVerticalImages = is4VerticalLayout() && colorGroup && !colorGroup.images.some(img => !isImageHorizontal(img))
+              const hasNoHorizontalImages = is4HorizontalLayout() && colorGroup && !colorGroup.images.some(img => isImageHorizontal(img))
+              const colorDisabled = (hoveredColor === colorKey && hoveredColorImage && isSelectionMode && !canSelectImage(hoveredColorImage)) || hasNoVerticalImages || hasNoHorizontalImages
               return (
                 <div
                   key={colorKey}
@@ -637,8 +676,9 @@ export default function ImageList({ images, projects }: ImageListProps) {
                     setHoveredColorImage(null)
                   }}
                   onClick={() => {
+                    if (hasNoVerticalImages || hasNoHorizontalImages) return
                     const imageToUse = hoveredColorImage
-                    if (imageToUse) {
+                    if (imageToUse && (!isSelectionMode || canSelectImage(imageToUse))) {
                       if (isSelectionMode) {
                         handleImageSelect(imageToUse)
                       } else {
@@ -646,7 +686,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
                       }
                     }
                   }}
-                  style={{ cursor: 'pointer' }}
+                  style={{ 
+                    cursor: 'pointer',
+                    opacity: colorDisabled ? 0.4 : 1,
+                  }}
                 >
                   <span className="color-name">{formattedColor}</span>
                 </div>
@@ -659,10 +702,17 @@ export default function ImageList({ images, projects }: ImageListProps) {
               onMouseEnter={() => {
                 if (visibleRows.has('randomly')) {
                   const validImages = images.filter(img => img?.asset)
-                  if (validImages.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * validImages.length)
-                    setRandomImageIndex(randomIndex)
+                  let pool = validImages
+                  if (is4VerticalLayout()) pool = pool.filter(img => !isImageHorizontal(img))
+                  else if (is4HorizontalLayout()) pool = pool.filter(img => isImageHorizontal(img))
+                  if (pool.length > 0) {
+                    const selectedImage = pool[Math.floor(Math.random() * pool.length)]
+                    const indexInOriginal = validImages.indexOf(selectedImage)
+                    setRandomImageIndex(indexInOriginal)
                     setHoveredRandomly(true)
+                  } else {
+                    setHoveredRandomly(false)
+                    setRandomImageIndex(null)
                   }
                 }
               }}
@@ -671,18 +721,34 @@ export default function ImageList({ images, projects }: ImageListProps) {
                 setRandomImageIndex(null)
               }}
               onClick={() => {
+                if (isSelectionMode) {
+                  const validImages = images.filter(img => img?.asset)
+                  if (is4VerticalLayout() && validImages.filter(img => !isImageHorizontal(img)).length === 0) return
+                  if (is4HorizontalLayout() && validImages.filter(img => isImageHorizontal(img)).length === 0) return
+                }
                 if (randomImageIndex !== null) {
                   const validImages = images.filter(img => img?.asset)
-                  if (validImages[randomImageIndex]) {
+                  const imageToUse = validImages[randomImageIndex]
+                  if (imageToUse && (!isSelectionMode || canSelectImage(imageToUse))) {
                     if (isSelectionMode) {
-                      handleImageSelect(validImages[randomImageIndex])
+                      handleImageSelect(imageToUse)
                     } else {
-                      handleImageClick(validImages[randomImageIndex])
+                      handleImageClick(imageToUse)
                     }
                   }
                 }
               }}
-              style={{ cursor: 'pointer' }}
+              style={{ 
+                cursor: 'pointer',
+                opacity: (() => {
+                  if (isSelectionMode) {
+                    const validImages = images.filter(img => img?.asset)
+                    if (is4VerticalLayout() && validImages.filter(img => !isImageHorizontal(img)).length === 0) return 0.4
+                    if (is4HorizontalLayout() && validImages.filter(img => isImageHorizontal(img)).length === 0) return 0.4
+                  }
+                  return 1
+                })(),
+              }}
             >
               <span className="randomly-text">Randomly</span>
             </div>
@@ -714,13 +780,37 @@ export default function ImageList({ images, projects }: ImageListProps) {
           >
             {(expandedAbout || isMobile) ? (
               <div className="about-content">
-                <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone.</div>
-                <div className="about-line">The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
-                <div className="about-line">Represented by C41.eu M: +39 3208740367</div>
-                <div className="about-line">studio@cratere.studio M: +39 3208740367</div>
-                <div className="about-line">Viale Abruzzi 32</div>
+                <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
                 <div className="about-line-spacing"></div>
-                <div className="about-line">Website: Matteo Viti</div>
+                <div className="about-line">Download portfolio</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">Selected Pubblications</div>
+                <div className="about-line about-line-tight">Arxipelag - Sul Sentiero</div>
+                <div className="about-line about-line-tight">Phroom, Zone Magazine - Teleonomia</div>
+                <div className="about-line about-line-tight">Perimetro - La Cattedrale</div>
+                <div className="about-line about-line-tight">C41 - Boring Cactus</div>
+                <div className="about-line about-line-tight">Highsnobiety, Nss sport, Hypebeast - Nike ACG Train</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">Selected Exhibitions</div>
+                <div className="about-line about-line-tight">@Daste Bergamo, &quot;One Eye Sees, The Other Feels&quot;, 30/04/2022 - 14/05/2022</div>
+                <div className="about-line about-line-tight">@Studio Cratere, &quot;Everything Be Revealed In Time&quot;, 05/04/2024 - 03/05/2024</div>
+                <div className="about-line about-line-tight">@Studio Cratere, &quot;Lucid Dreams&quot;, 13/06/2024 - 12/07/2024</div>
+                <div className="about-line about-line-tight">@Studio Cratere, &quot;by PHONE&quot;, 23/10/2024 - review on Phroom and Outpump</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">Commissions</div>
+                <div className="about-line about-line-tight">Represented by C41.eu</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">studio@cratere.studio</div>
+                <div className="about-line about-line-tight">M: +39 3208740367</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">General Info</div>
+                <div className="about-line about-line-tight">contact@cratere.studio</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">Address</div>
+                <div className="about-line about-line-tight">Viale Abruzzi 32</div>
+                <div className="about-line-spacing"></div>
+                <div className="about-line about-line-tight">Website</div>
+                <div className="about-line about-line-tight">Matteo Viti</div>
               </div>
             ) : (
               <span>+</span>
@@ -789,8 +879,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
       {showColorPreview && (() => {
         const colorKey = isMobile ? centeredColor! : hoveredColor!
         const colorLabel = isMobile ? centeredColorLabel : hoveredColorLabel
-        const randomImage = getRandomImageForColor(colorKey)
+        const randomImage = !isMobile && hoveredColorImage ? hoveredColorImage : getRandomImageForColor(colorKey)
         if (!randomImage?.asset) return null
+        if (is4VerticalLayout() && isImageHorizontal(randomImage)) return null
+        if (is4HorizontalLayout() && !isImageHorizontal(randomImage)) return null
         return (
           <div className="image-preview-overlay">
             <img
@@ -811,6 +903,8 @@ export default function ImageList({ images, projects }: ImageListProps) {
         if (validImages.length === 0 || randomImageIndex >= validImages.length) return null
         const randomImage = validImages[randomImageIndex]
         if (!randomImage?.asset) return null
+        if (is4VerticalLayout() && isImageHorizontal(randomImage)) return null
+        if (is4HorizontalLayout() && !isImageHorizontal(randomImage)) return null
         return (
           <div className="image-preview-overlay">
             <img
@@ -836,7 +930,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
             margin-left: 20px;
             margin-right: 20px;
             margin-top: 0;
-            padding-top: 10px;
+            padding-top: 15px;
             position: relative;
             z-index: 10;
           }
@@ -990,8 +1084,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
           margin-bottom: calc(1em * 1.3);
         }
         
+        .about-line-tight {
+          margin-bottom: 0;
+        }
+        
         .about-line-spacing {
-          margin-top: calc(1em * 1.3 * 3);
+          margin-top: calc(1em * 1.3);
         }
         
         .project-row {
