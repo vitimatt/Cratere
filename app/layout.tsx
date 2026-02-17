@@ -4,8 +4,37 @@ import './globals.css'
 import { DesignerProvider } from './contexts/DesignerContext'
 
 export const metadata: Metadata = {
-  title: 'Cratere - Next.js + Sanity CMS',
-  description: 'A Next.js application with embedded Sanity CMS',
+  title: 'Cratere',
+  description: 'Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://cratere.studio'),
+  alternates: {
+    canonical: '/',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
+  },
+  openGraph: {
+    title: 'Cratere',
+    description: 'Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.',
+    type: 'website',
+    locale: 'en',
+    siteName: 'Cratere',
+    url: '/',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Cratere',
+    description: 'Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.',
+  },
+  icons: {
+    icon: '/favicon/favicon.png',
+  },
+  category: 'photography',
 }
 
 export default function RootLayout({
@@ -13,9 +42,21 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'Cratere',
+    description: 'Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.',
+    url: process.env.NEXT_PUBLIC_SITE_URL || 'https://cratere.studio',
+  }
+
   return (
     <html lang="en">
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <DesignerProvider>{children}</DesignerProvider>
         <Script id="remove-editor-overlay" strategy="afterInteractive">
           {`
