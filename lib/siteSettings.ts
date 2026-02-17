@@ -32,6 +32,7 @@ export interface SiteSettings {
   publications?: Publication[]
   exhibitions?: Exhibition[]
   commissions?: string
+  commissionsUrl?: string
   studioEmail?: string
   studioPhone?: string
   contactEmail?: string
@@ -80,6 +81,7 @@ export async function getSiteSettings(): Promise<SiteSettings | null> {
       publications,
       exhibitions,
       commissions,
+      commissionsUrl,
       studioEmail,
       studioPhone,
       contactEmail,
@@ -97,6 +99,7 @@ export function buildAboutLines(settings: SiteSettings | null): AboutLine[] {
   const publications = settings?.publications?.length ? settings.publications : DEFAULT_PUBLICATIONS
   const exhibitions = settings?.exhibitions?.length ? settings.exhibitions : DEFAULT_EXHIBITIONS
   const commissions = settings?.commissions ?? 'Represented by C41.eu'
+  const commissionsUrl = settings?.commissionsUrl
   const studioEmail = settings?.studioEmail ?? 'studio@cratere.studio'
   const studioPhone = settings?.studioPhone ?? 'M: +39 3208740367'
   const contactEmail = settings?.contactEmail ?? 'contact@cratere.studio'
@@ -128,7 +131,9 @@ export function buildAboutLines(settings: SiteSettings | null): AboutLine[] {
     })),
     { type: 'spacing' },
     { type: 'text', content: 'Commissions', tight: true },
-    { type: 'text', content: commissions, tight: true },
+    commissionsUrl
+      ? { type: 'link' as const, content: commissions, url: commissionsUrl, tight: true }
+      : { type: 'text' as const, content: commissions, tight: true },
     { type: 'spacing' },
     { type: 'email', content: studioEmail, tight: true },
     { type: 'phone', content: studioPhone, tight: true },

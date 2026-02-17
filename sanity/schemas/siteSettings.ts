@@ -95,6 +95,12 @@ export default defineType({
       description: 'e.g. "Represented by C41.eu"',
     }),
     defineField({
+      name: 'commissionsUrl',
+      title: 'Commissions Link',
+      type: 'url',
+      description: 'Optional URL to make the commissions text a link',
+    }),
+    defineField({
       name: 'studioEmail',
       title: 'Studio Email',
       type: 'string',
