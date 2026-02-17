@@ -108,7 +108,7 @@ export function buildAboutLines(settings: SiteSettings | null): AboutLine[] {
     { type: 'text', content: bio, tight: false },
     { type: 'spacing' },
     portfolioPdf
-      ? { type: 'link', content: 'Download portfolio', url: portfolioPdf, tight: false }
+      ? { type: 'link', content: 'Download portfolio', url: '/portfolio', tight: false }
       : { type: 'text', content: 'Download portfolio', tight: false },
     { type: 'spacing' },
     { type: 'text', content: 'Selected Pubblications', tight: true },

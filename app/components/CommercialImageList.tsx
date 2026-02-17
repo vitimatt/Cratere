@@ -536,11 +536,16 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
               }
               const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''}`
               if (line.type === 'link') {
-                const isPdf = line.url.toLowerCase().includes('.pdf')
+                const isInternal = line.url.startsWith('/')
+                const isPdf = !isInternal && line.url.toLowerCase().includes('.pdf')
                 const href = isPdf ? `${line.url}?dl` : line.url
                 return (
                   <div key={idx} className={lineClass}>
-                    <a href={href} target="_blank" rel="noopener noreferrer" className="about-link">
+                    <a
+                      href={href}
+                      {...(isInternal ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
+                      className="about-link"
+                    >
                       {line.content}
                     </a>
                   </div>
