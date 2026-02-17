@@ -104,6 +104,9 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <meta name="format-detection" content="telephone=no, email=no, address=no" />
+      </head>
       <body>
         <script
           type="application/ld+json"
