@@ -35,6 +35,20 @@ export const metadata: Metadata = {
     icon: '/favicon/favicon.png',
   },
   category: 'photography',
+  keywords: [
+    'Studio Cratere',
+    'photography studio Milan',
+    'photographer Milan',
+    'creative studio Milan',
+    'contemporary photography',
+    'artistic photography',
+    'still life photography',
+    'fashion photography',
+    'design photography',
+    'campaign photography',
+    'creative practice Milan',
+    'commercial photography',
+  ],
 }
 
 export default function RootLayout({
@@ -42,12 +56,50 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const jsonLd = {
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://cratere.studio'
+
+  const organizationSchema = {
     '@context': 'https://schema.org',
-    '@type': 'Organization',
+    '@type': ['Organization', 'LocalBusiness', 'ProfessionalService'],
+    '@id': `${baseUrl}/#organization`,
     name: 'Cratere',
-    description: 'Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.',
-    url: process.env.NEXT_PUBLIC_SITE_URL || 'https://cratere.studio',
+    alternateName: 'Studio Cratere',
+    description: 'Studio Cratere is a photography and creative studio based in Milan, Italy. We specialize in artistic, creative, and contemporary photography with a focus on still life. We work with design and fashion brands on campaigns and artistic projects. Creative practice for commercial photography, editorial, and artistic commissions.',
+    url: baseUrl,
+    logo: `${baseUrl}/favicon/favicon.png`,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: 'Viale Abruzzi 32',
+      addressLocality: 'Milan',
+      addressRegion: 'Lombardy',
+      addressCountry: 'IT',
+    },
+    areaServed: {
+      '@type': 'City',
+      name: 'Milan',
+      containedInPlace: { '@type': 'Country', name: 'Italy' },
+    },
+    knowsAbout: [
+      'photography',
+      'still life photography',
+      'fashion photography',
+      'design photography',
+      'campaign photography',
+      'artistic photography',
+      'contemporary photography',
+      'creative studio',
+      'commercial photography',
+      'editorial photography',
+    ],
+    serviceType: [
+      'Photography studio',
+      'Creative studio',
+      'Still life photography',
+      'Fashion photography',
+      'Campaign photography',
+      'Artistic photography',
+    ],
+    slogan: 'We want to see the world and give it meaning.',
   }
 
   return (
@@ -55,7 +107,23 @@ export default function RootLayout({
       <body>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'WebSite',
+              '@id': `${baseUrl}/#website`,
+              name: 'Studio Cratere',
+              alternateName: 'Cratere',
+              description: 'Photography and creative studio in Milan. Artistic, contemporary still life photography for fashion, design brands, and campaigns.',
+              url: baseUrl,
+              publisher: { '@id': `${baseUrl}/#organization` },
+              inLanguage: 'en',
+            }),
+          }}
         />
         <DesignerProvider>{children}</DesignerProvider>
         <Script id="remove-editor-overlay" strategy="afterInteractive">
