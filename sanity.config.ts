@@ -40,6 +40,9 @@ export default defineConfig({
     image: {
       assetSources: (prev) => [uploadWithFilenameAssetSource, ...prev],
     },
+    file: {
+      assetSources: (prev) => [uploadWithFilenameAssetSource, ...prev],
+    },
   },
 })
 
