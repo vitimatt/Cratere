@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { urlFor } from '../../lib/imageUrl'
+import type { AboutLine } from '../../lib/siteSettings'
+
+// Mobile: vertical position (px from viewport top) - fallback when ref unavailable
+const MOBILE_DETECTION_LINE = 23
 
 interface ImageItem {
   asset: any
@@ -34,9 +38,10 @@ interface Project {
 interface CommercialImageListProps {
   images: ImageItem[]
   projects: Project[]
+  aboutLines: AboutLine[]
 }
 
-export default function CommercialImageList({ images, projects }: CommercialImageListProps) {
+export default function CommercialImageList({ images, projects, aboutLines }: CommercialImageListProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
   const [hoveredProjectImageIndex, setHoveredProjectImageIndex] = useState<number | null>(null)
@@ -57,6 +62,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
   const byCommissionerRef = useRef<HTMLDivElement>(null)
   const mousePosRef = useRef<{ x: number; y: number } | null>(null)
   const imageColumnRef = useRef<HTMLDivElement | null>(null)
+  const detectionLineRef = useRef<HTMLDivElement>(null)
 
   const updateHoverFromPosition = useCallback(() => {
     if (isMobile) return
@@ -236,13 +242,17 @@ export default function CommercialImageList({ images, projects }: CommercialImag
   // Scroll handler for mobile - find which row is at top line (matches homepage)
   useEffect(() => {
     if (!isMobile) return
-    const detectionLine = 20
     const handleScroll = () => {
+      const lineEl = detectionLineRef.current
+      const detectionLineY = lineEl
+        ? lineEl.getBoundingClientRect().top + lineEl.getBoundingClientRect().height / 2
+        : MOBILE_DETECTION_LINE
       let closestRow: { id: string; distance: number } | null = null
       const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
       const distToLine = (rect: DOMRect) => {
-        if (rect.top <= detectionLine && rect.bottom >= detectionLine) return 0
-        return Math.abs(rect.top - detectionLine)
+        const rowCenter = (rect.top + rect.bottom) / 2
+        if (rect.top <= detectionLineY && rect.bottom >= detectionLineY) return 0
+        return Math.abs(rowCenter - detectionLineY)
       }
       if (bySubjectRef.current) {
         const rect = bySubjectRef.current.getBoundingClientRect()
@@ -313,10 +323,12 @@ export default function CommercialImageList({ images, projects }: CommercialImag
     }
     
     window.addEventListener('scroll', throttledScroll, { passive: true })
+    window.addEventListener('resize', throttledScroll)
     handleScroll() // Initial check
     
     return () => {
       window.removeEventListener('scroll', throttledScroll)
+      window.removeEventListener('resize', throttledScroll)
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
       }
@@ -401,6 +413,15 @@ export default function CommercialImageList({ images, projects }: CommercialImag
 
   return (
     <>
+      {isMobile && (
+        <>
+          <div ref={detectionLineRef} className="mobile-detection-area-debug" aria-hidden="true" />
+          <div className="mobile-line-dashes" aria-hidden="true">
+            <span className="mobile-line-dash mobile-line-dash-left">—</span>
+            <span className="mobile-line-dash mobile-line-dash-right">—</span>
+          </div>
+        </>
+      )}
       <div ref={imageColumnRef} className={`image-column ${isReady ? 'column-ready' : ''}`}>
         <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
@@ -509,37 +530,84 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}
         >
           <div className="about-content">
-            <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line">Download portfolio</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">Selected Pubblications</div>
-            <div className="about-line about-line-tight">Arxipelag - Sul Sentiero</div>
-            <div className="about-line about-line-tight">Phroom, Zone Magazine - Teleonomia</div>
-            <div className="about-line about-line-tight">Perimetro - La Cattedrale</div>
-            <div className="about-line about-line-tight">C41 - Boring Cactus</div>
-            <div className="about-line about-line-tight">Highsnobiety, Nss sport, Hypebeast - Nike ACG Train</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">Selected Exhibitions</div>
-            <div className="about-line about-line-tight">@Daste Bergamo, &quot;One Eye Sees, The Other Feels&quot;, 30/04/2022 - 14/05/2022</div>
-            <div className="about-line about-line-tight">@Studio Cratere, &quot;Everything Be Revealed In Time&quot;, 05/04/2024 - 03/05/2024</div>
-            <div className="about-line about-line-tight">@Studio Cratere, &quot;Lucid Dreams&quot;, 13/06/2024 - 12/07/2024</div>
-            <div className="about-line about-line-tight">@Studio Cratere, &quot;by PHONE&quot;, 23/10/2024 - review on Phroom and Outpump</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">Commissions</div>
-            <div className="about-line about-line-tight">Represented by C41.eu</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">studio@cratere.studio</div>
-            <div className="about-line about-line-tight">M: +39 3208740367</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">General Info</div>
-            <div className="about-line about-line-tight">contact@cratere.studio</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">Address</div>
-            <div className="about-line about-line-tight">Viale Abruzzi 32</div>
-            <div className="about-line-spacing"></div>
-            <div className="about-line about-line-tight">Website</div>
-            <div className="about-line about-line-tight">Matteo Viti</div>
+            {aboutLines.map((line, idx) => {
+              if (line.type === 'spacing') {
+                return <div key={idx} className="about-line-spacing" />
+              }
+              const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''}`
+              if (line.type === 'link') {
+                const isPdf = line.url.toLowerCase().includes('.pdf')
+                const href = isPdf ? `${line.url}?dl` : line.url
+                return (
+                  <div key={idx} className={lineClass}>
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="about-link">
+                      {line.content}
+                    </a>
+                  </div>
+                )
+              }
+              if (line.type === 'email') {
+                return (
+                  <div key={idx} className={lineClass}>
+                    <a href={`mailto:${line.content}`} className="about-link">
+                      {line.content}
+                    </a>
+                  </div>
+                )
+              }
+              if (line.type === 'phone') {
+                return (
+                  <div key={idx} className={lineClass}>
+                    <a href={`tel:${line.content.replace(/^M:\s*/i, '').replace(/\s/g, '')}`} className="about-link">
+                      {line.content}
+                    </a>
+                  </div>
+                )
+              }
+              if (line.type === 'publication') {
+                const outletParts = line.outlets.map((o, i) =>
+                  o.url ? (
+                    <span key={i}>
+                      {i > 0 && ', '}
+                      <a href={o.url} target="_blank" rel="noopener noreferrer" className="about-link">{o.title}</a>
+                    </span>
+                  ) : (
+                    <span key={i}>{i > 0 ? ', ' : ''}{o.title}</span>
+                  )
+                )
+                return (
+                  <div key={idx} className={lineClass}>
+                    {outletParts}
+                    {line.projectTitle && ` - ${line.projectTitle}`}
+                  </div>
+                )
+              }
+              if (line.type === 'exhibition') {
+                const hasReviewLinks = line.reviewLinks.length > 0
+                return (
+                  <div key={idx} className={lineClass}>
+                    {line.title}
+                    {hasReviewLinks && (
+                      <> - Review on {line.reviewLinks.map((r, i) =>
+                        r.url ? (
+                          <span key={i}>
+                            {i > 0 && ', '}
+                            <a href={r.url} target="_blank" rel="noopener noreferrer" className="about-link">{r.title}</a>
+                          </span>
+                        ) : (
+                          <span key={i}>{i > 0 ? ', ' : ''}{r.title}</span>
+                        )
+                      )}</>
+                    )}
+                  </div>
+                )
+              }
+              return (
+                <div key={idx} className={lineClass}>
+                  {line.content}
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -617,7 +685,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
             margin-left: 20px;
             margin-right: 20px;
             margin-top: 0;
-            padding-top: 15px;
+            padding-top: 14px;
             position: relative;
             z-index: 10;
           }
@@ -741,6 +809,14 @@ export default function CommercialImageList({ images, projects }: CommercialImag
           margin-bottom: 0;
         }
         
+        .about-link {
+          color: inherit;
+          text-decoration: none;
+        }
+        .about-link:hover {
+          text-decoration: underline;
+        }
+        
         .about-line-spacing {
           margin-top: calc(1em * 1.3);
         }
@@ -851,6 +927,42 @@ export default function CommercialImageList({ images, projects }: CommercialImag
         }
         
         @media (max-width: 768px) {
+          .mobile-detection-area-debug {
+            position: fixed;
+            top: 21px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            pointer-events: none;
+            z-index: 19;
+          }
+          .mobile-line-dashes {
+            position: fixed;
+            top: 23px;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            transform: translateY(-50%);
+          }
+          .mobile-line-dash {
+            font-size: 14px;
+            line-height: 1;
+            color: #000;
+          }
+          .mobile-line-dash-left {
+            margin-left: -24px;
+          }
+          .mobile-line-dash-right {
+            margin-right: -24px;
+          }
+        }
+        
+        @media (max-width: 768px) {
           .project-slider-overlay {
             position: fixed;
             top: 50%;
@@ -871,6 +983,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
             overflow-x: auto;
             overflow-y: visible;
             -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: none;
             scrollbar-width: none;
             -ms-overflow-style: none;
             touch-action: pan-x pan-y;
@@ -886,7 +999,7 @@ export default function CommercialImageList({ images, projects }: CommercialImag
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 20vw;
+            gap: 5vw;
             flex-wrap: nowrap;
             width: max-content;
             padding-left: 10vw;

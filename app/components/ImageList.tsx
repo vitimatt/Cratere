@@ -7,6 +7,7 @@ const MOBILE_DETECTION_LINE = 23
 import { useRouter } from 'next/navigation'
 import { urlFor } from '../../lib/imageUrl'
 import { useDesigner, LayoutType } from '../contexts/DesignerContext'
+import type { AboutLine } from '../../lib/siteSettings'
 
 interface ImageItem {
   asset: any
@@ -32,9 +33,10 @@ interface Project {
 interface ImageListProps {
   images: ImageItem[]
   projects: Project[]
+  aboutLines: AboutLine[]
 }
 
-export default function ImageList({ images, projects }: ImageListProps) {
+export default function ImageList({ images, projects, aboutLines }: ImageListProps) {
   const router = useRouter()
   const { selectionContext, setSelectedImage, setSelectionContext, getLayout } = useDesigner()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
@@ -535,41 +537,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
 
   const hoveredColorLabel = hoveredColor ? imagesByColor[hoveredColor]?.label ?? hoveredColor : null
 
-  // About content lines
-  const aboutLines = [
-    { type: 'text' as const, content: 'Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, "cup") is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.', tight: false },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Download portfolio', tight: false },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Selected Pubblications', tight: true },
-    { type: 'text' as const, content: 'Arxipelag - Sul Sentiero', tight: true },
-    { type: 'text' as const, content: 'Phroom, Zone Magazine - Teleonomia', tight: true },
-    { type: 'text' as const, content: 'Perimetro - La Cattedrale', tight: true },
-    { type: 'text' as const, content: 'C41 - Boring Cactus', tight: true },
-    { type: 'text' as const, content: 'Highsnobiety, Nss sport, Hypebeast - Nike ACG Train', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Selected Exhibitions', tight: true },
-    { type: 'text' as const, content: '@Daste Bergamo, "One Eye Sees, The Other Feels", 30/04/2022 - 14/05/2022', tight: true },
-    { type: 'text' as const, content: '@Studio Cratere, "Everything Be Revealed In Time", 05/04/2024 - 03/05/2024', tight: true },
-    { type: 'text' as const, content: '@Studio Cratere, "Lucid Dreams", 13/06/2024 - 12/07/2024', tight: true },
-    { type: 'text' as const, content: '@Studio Cratere, "by PHONE", 23/10/2024 - review on Phroom and Outpump', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Commissions', tight: true },
-    { type: 'text' as const, content: 'Represented by C41.eu', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'studio@cratere.studio', tight: true },
-    { type: 'text' as const, content: 'M: +39 3208740367', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'General Info', tight: true },
-    { type: 'text' as const, content: 'contact@cratere.studio', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Address', tight: true },
-    { type: 'text' as const, content: 'Viale Abruzzi 32', tight: true },
-    { type: 'spacing' as const },
-    { type: 'text' as const, content: 'Website', tight: true },
-    { type: 'text' as const, content: 'Matteo Viti', tight: true },
-  ]
-
   const showImagePreview = isMobile ? centeredImageIndex !== null : hoveredIndex !== null
   const showProjectPreview = isMobile
     ? centeredProjectIndex !== null
@@ -852,8 +819,76 @@ export default function ImageList({ images, projects }: ImageListProps) {
                   if (line.type === 'spacing') {
                     return <div key={idx} className="about-line-spacing" />
                   }
+                  const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''}`
+                  if (line.type === 'link') {
+                    const isPdf = line.url.toLowerCase().includes('.pdf')
+                    const href = isPdf ? `${line.url}?dl` : line.url
+                    return (
+                      <div key={idx} className={lineClass}>
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="about-link">
+                          {line.content}
+                        </a>
+                      </div>
+                    )
+                  }
+                  if (line.type === 'email') {
+                    return (
+                      <div key={idx} className={lineClass}>
+                        <a href={`mailto:${line.content}`} className="about-link">
+                          {line.content}
+                        </a>
+                      </div>
+                    )
+                  }
+                  if (line.type === 'phone') {
+                    return (
+                      <div key={idx} className={lineClass}>
+                        <a href={`tel:${line.content.replace(/^M:\s*/i, '').replace(/\s/g, '')}`} className="about-link">
+                          {line.content}
+                        </a>
+                      </div>
+                    )
+                  }
+                  if (line.type === 'publication') {
+                    const outletParts = line.outlets.map((o, i) =>
+                      o.url ? (
+                        <span key={i}>
+                          {i > 0 && ', '}
+                          <a href={o.url} target="_blank" rel="noopener noreferrer" className="about-link">{o.title}</a>
+                        </span>
+                      ) : (
+                        <span key={i}>{i > 0 ? ', ' : ''}{o.title}</span>
+                      )
+                    )
+                    return (
+                      <div key={idx} className={lineClass}>
+                        {outletParts}
+                        {line.projectTitle && ` - ${line.projectTitle}`}
+                      </div>
+                    )
+                  }
+                  if (line.type === 'exhibition') {
+                    const hasReviewLinks = line.reviewLinks.length > 0
+                    return (
+                      <div key={idx} className={lineClass}>
+                        {line.title}
+                        {hasReviewLinks && (
+                          <> - Review on {line.reviewLinks.map((r, i) =>
+                            r.url ? (
+                              <span key={i}>
+                                {i > 0 && ', '}
+                                <a href={r.url} target="_blank" rel="noopener noreferrer" className="about-link">{r.title}</a>
+                              </span>
+                            ) : (
+                              <span key={i}>{i > 0 ? ', ' : ''}{r.title}</span>
+                            )
+                          )}</>
+                        )}
+                      </div>
+                    )
+                  }
                   return (
-                    <div key={idx} className={`about-line ${line.tight ? 'about-line-tight' : ''}`}>
+                    <div key={idx} className={lineClass}>
                       {line.content}
                     </div>
                   )
@@ -1141,6 +1176,14 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .about-line-tight {
           margin-bottom: 0;
+        }
+        
+        .about-link {
+          color: inherit;
+          text-decoration: none;
+        }
+        .about-link:hover {
+          text-decoration: underline;
         }
         
         .about-line-spacing {

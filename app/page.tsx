@@ -1,4 +1,5 @@
 import { client } from '../lib/sanity'
+import { getSiteSettings, buildAboutLines } from '../lib/siteSettings'
 import ImageList from './components/ImageList'
 
 // Force dynamic rendering to always fetch fresh data
@@ -65,7 +66,11 @@ function extractTitleFromFilename(asset: any, assetMetadata?: any, imageTitle?: 
 }
 
 export default async function Home() {
-  const projects = await getProjects()
+  const [projects, siteSettings] = await Promise.all([
+    getProjects(),
+    getSiteSettings(),
+  ])
+  const aboutLines = buildAboutLines(siteSettings)
   
   // Flatten all images from all projects into a single list
   const allImages: Array<{
@@ -109,7 +114,7 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-white">
-      <ImageList images={allImages} projects={projects} />
+      <ImageList images={allImages} projects={projects} aboutLines={aboutLines} />
     </main>
   )
 }

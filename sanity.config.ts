@@ -4,6 +4,20 @@ import { visionTool } from '@sanity/vision'
 import { schemaTypes } from './sanity/schemas'
 import { uploadWithFilenameAssetSource } from './sanity/components/UploadWithFilenameAssetSource'
 
+const structure = (S: any) =>
+  S.list()
+    .title('Content')
+    .items([
+      S.listItem()
+        .title('Site Settings')
+        .child(
+          S.document()
+            .schemaType('siteSettings')
+            .documentId('siteSettings')
+        ),
+      ...S.documentTypeListItems().filter((listItem: any) => listItem.getId() !== 'siteSettings'),
+    ])
+
 export default defineConfig({
   name: 'default',
   title: 'Cratere CMS',
@@ -13,7 +27,10 @@ export default defineConfig({
 
   basePath: '/studio',
 
-  plugins: [structureTool(), visionTool()],
+  plugins: [
+    structureTool({ structure }),
+    visionTool(),
+  ],
 
   schema: {
     types: schemaTypes,
