@@ -1,6 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+
+// Mobile: vertical position (px from viewport top) - fallback when ref unavailable
+const MOBILE_DETECTION_LINE = 23
 import { useRouter } from 'next/navigation'
 import { urlFor } from '../../lib/imageUrl'
 import { useDesigner, LayoutType } from '../contexts/DesignerContext'
@@ -42,7 +45,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const [hoveredRandomly, setHoveredRandomly] = useState<boolean>(false)
   const [randomImageIndex, setRandomImageIndex] = useState<number | null>(null)
   const [expandedAbout, setExpandedAbout] = useState<boolean>(false)
-  const [visibleRows, setVisibleRows] = useState<Set<string>>(new Set())
+  const [visibleRowCount, setVisibleRowCount] = useState<number>(0)
   const [isReady, setIsReady] = useState<boolean>(false)
   const [isMobile, setIsMobile] = useState<boolean>(false)
   const [centeredImageIndex, setCenteredImageIndex] = useState<number | null>(null)
@@ -57,6 +60,9 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const mousePosRef = useRef<{ x: number; y: number } | null>(null)
   const imageColumnRef = useRef<HTMLDivElement | null>(null)
   const randomlyImageIndexRef = useRef<number | null>(null)
+  const visibleRowCountRef = useRef(0)
+  const rowIdToIndexRef = useRef<Map<string, number>>(new Map())
+  const detectionLineRef = useRef<HTMLDivElement>(null)
 
   const updateHoverFromPosition = useCallback(() => {
     if (isMobile) return
@@ -73,10 +79,14 @@ export default function ImageList({ images, projects }: ImageListProps) {
       setRandomImageIndex(null)
       return
     }
+    const checkVisible = (rowId: string) => {
+      const idx = rowIdToIndexRef.current.get(rowId)
+      return idx !== undefined && idx < visibleRowCountRef.current
+    }
     const imageRow = el.closest('.image-row') as HTMLElement | null
     if (imageRow) {
       const idx = imageRow.getAttribute('data-image-index')
-      if (idx !== null && visibleRows.has(`image-${idx}`)) {
+      if (idx !== null && checkVisible(`image-${idx}`)) {
         const index = parseInt(idx, 10)
         setHoveredIndex(images[index]?.index ?? null)
         setHoveredProjectIndex(null)
@@ -92,7 +102,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
     if (projectSection) {
       const pIdx = projectSection.getAttribute('data-project-index')
       const imgIdx = projectSection.getAttribute('data-project-image-index')
-      if (pIdx !== null && imgIdx !== null && visibleRows.has(`project-${pIdx}`)) {
+      if (pIdx !== null && imgIdx !== null && checkVisible(`project-${pIdx}`)) {
         setHoveredIndex(null)
         setHoveredProjectIndex(parseInt(pIdx, 10))
         setHoveredProjectImageIndex(parseInt(imgIdx, 10))
@@ -106,7 +116,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
     const colorRow = el.closest('.color-row') as HTMLElement | null
     if (colorRow) {
       const cKey = colorRow.getAttribute('data-color-key')
-      if (cKey && visibleRows.has(`color-${cKey}`)) {
+      if (cKey && checkVisible(`color-${cKey}`)) {
         const randomImage = getRandomImageForColor(cKey)
         setHoveredIndex(null)
         setHoveredProjectIndex(null)
@@ -119,7 +129,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
       }
     }
     const randomlyRow = el.closest('.randomly-row')
-    if (randomlyRow && visibleRows.has('randomly')) {
+    if (randomlyRow && checkVisible('randomly')) {
       const validImages = images.filter(img => img?.asset)
       if (validImages.length > 0) {
         const rnd = Math.floor(Math.random() * validImages.length)
@@ -141,7 +151,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
     setHoveredRandomly(false)
     setRandomImageIndex(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images, visibleRows, isMobile])
+  }, [images, isMobile])
 
   useEffect(() => {
     const timer = setTimeout(() => setIsReady(true), 0)
@@ -247,7 +257,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
   const getColorLabel = (rawColor: string): string => rawColor.trim()
 
   // Group images by color (prefer explicit color field, fallback to filename)
-  const imagesByColor = images.reduce((acc, image) => {
+  const imagesByColor = useMemo(() => images.reduce((acc, image) => {
     const rawColor = (image.color && image.color.trim()) || extractColorFromFilename(image.asset, image.assetMetadata)
     if (!rawColor) {
       return acc
@@ -271,25 +281,105 @@ export default function ImageList({ images, projects }: ImageListProps) {
 
     acc[key].images.push(image)
     return acc
-  }, {} as Record<string, { label: string; images: ImageItem[] }>)
+  }, {} as Record<string, { label: string; images: ImageItem[] }>), [images])
 
-  const colors = Object.keys(imagesByColor).sort((a, b) => {
+  const colors = useMemo(() => Object.keys(imagesByColor).sort((a, b) => {
     const labelA = imagesByColor[a]?.label?.toLowerCase() ?? ''
     const labelB = imagesByColor[b]?.label?.toLowerCase() ?? ''
     return labelA.localeCompare(labelB)
-  })
+  }), [imagesByColor])
 
-  // Scroll handler for mobile - find which row is at top line of text (20px from viewport top, matching side gap)
+  const allRowIdsOrdered = useMemo(() => {
+    const base = [
+      'cratere',
+      'by-subject',
+      ...images.map((_, i) => `image-${i}`),
+      'projects-spacing',
+      'by-commissioner',
+      ...projects.map((_, i) => `project-${i}`),
+    ]
+    if (!isMobile) {
+      base.push(
+        'colors-spacing',
+        'by-color',
+        ...colors.map((c) => `color-${c}`),
+        'randomly-spacing',
+        'randomly',
+        'empty-spacing',
+        'empty'
+      )
+    }
+    base.push('about-spacing', 'about')
+    return base
+  }, [images.length, projects.length, colors, isMobile])
+
+  const rowIdToIndex = useMemo(() => {
+    const m = new Map<string, number>()
+    allRowIdsOrdered.forEach((id, i) => m.set(id, i))
+    return m
+  }, [allRowIdsOrdered])
+
+  const isRowVisible = useCallback((rowId: string) => {
+    const idx = rowIdToIndex.get(rowId)
+    return idx !== undefined && idx < visibleRowCount
+  }, [rowIdToIndex, visibleRowCount])
+
+  useEffect(() => {
+    visibleRowCountRef.current = visibleRowCount
+    rowIdToIndexRef.current = rowIdToIndex
+  }, [visibleRowCount, rowIdToIndex])
+
+  const hasStartedAnimationRef = useRef(false)
+  // Animation: white -> Cratere instantly -> 2s -> lines in quick succession (instantly each)
+  useEffect(() => {
+    if (images.length === 0 && projects.length === 0) return
+    if (isSelectionMode) {
+      setVisibleRowCount(allRowIdsOrdered.length)
+      return () => {}
+    }
+    if (hasStartedAnimationRef.current) return () => {}
+    hasStartedAnimationRef.current = true
+    const total = allRowIdsOrdered.length
+    const timeouts: NodeJS.Timeout[] = []
+    // Show Cratere (index 0) instantly
+    const t1 = setTimeout(() => setVisibleRowCount(1), 0)
+    timeouts.push(t1)
+    // 2 sec later: show remaining lines one by one, instantly each, quick succession (80ms between)
+    const t2 = setTimeout(() => {
+      let count = 1
+      const showNext = () => {
+        if (count >= total) return
+        count++
+        setVisibleRowCount(count)
+        if (count < total) {
+          const t = setTimeout(showNext, 80)
+          timeouts.push(t)
+        }
+      }
+      const t = setTimeout(showNext, 80)
+      timeouts.push(t)
+    }, 2000)
+    timeouts.push(t2)
+    return () => {
+      hasStartedAnimationRef.current = false
+      timeouts.forEach(clearTimeout)
+    }
+  }, [images.length, projects.length, colors.length, isSelectionMode, isMobile, allRowIdsOrdered])
+
+  // Scroll handler for mobile - find which row is at top line of text
   useEffect(() => {
     if (!isMobile) return
-    const detectionLine = 15 // Same as top padding
     const handleScroll = () => {
+      const lineEl = detectionLineRef.current
+      const detectionLineY = lineEl
+        ? lineEl.getBoundingClientRect().top + lineEl.getBoundingClientRect().height / 2
+        : MOBILE_DETECTION_LINE
       let closestRow: { id: string; distance: number } | null = null
       const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
-      // Prefer row that contains the detection line; else use closest top edge
       const distToLine = (rect: DOMRect) => {
-        if (rect.top <= detectionLine && rect.bottom >= detectionLine) return 0
-        return Math.abs(rect.top - detectionLine)
+        const rowCenter = (rect.top + rect.bottom) / 2
+        if (rect.top <= detectionLineY && rect.bottom >= detectionLineY) return 0
+        return Math.abs(rowCenter - detectionLineY)
       }
       if (bySubjectRef.current) {
         const rect = bySubjectRef.current.getBoundingClientRect()
@@ -360,9 +450,11 @@ export default function ImageList({ images, projects }: ImageListProps) {
       if (rafId === null) rafId = requestAnimationFrame(() => { handleScroll(); rafId = null })
     }
     window.addEventListener('scroll', throttledScroll, { passive: true })
+    window.addEventListener('resize', throttledScroll)
     handleScroll()
     return () => {
       window.removeEventListener('scroll', throttledScroll)
+      window.removeEventListener('resize', throttledScroll)
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,74 +534,40 @@ export default function ImageList({ images, projects }: ImageListProps) {
 
   const hoveredColorLabel = hoveredColor ? imagesByColor[hoveredColor]?.label ?? hoveredColor : null
 
-  // Animation: Show rows sequentially (skip animation when in selection mode)
-  useEffect(() => {
-    // Wait for content to load (check if we have data)
-    if (images.length === 0 && projects.length === 0) return
-    
-    // If in selection mode, show all rows immediately (no animation)
-    if (isSelectionMode) {
-      const allRowIds = [
-        'cratere',
-        'by-subject',
-        ...images.map((_, i) => `image-${i}`),
-        'projects-spacing',
-        'by-commissioner',
-        ...projects.map((_, i) => `project-${i}`),
-        'colors-spacing',
-        'by-color',
-        ...colors.map((color) => `color-${color}`),
-        'randomly-spacing',
-        'randomly',
-        'empty-spacing',
-        'empty',
-        'about-spacing',
-        'about',
-      ]
-      setVisibleRows(new Set(allRowIds))
-      return
-    }
-    
-    // Normal animation for first load
-    let timer2: NodeJS.Timeout | null = null
-    
-    // Show "Cratere" first
-    const timer1 = setTimeout(() => {
-      setVisibleRows(new Set(['cratere']))
-      
-      // Wait 2 seconds, then show remaining rows with 100ms delay each
-      timer2 = setTimeout(() => {
-        const allRowIds = [
-          'by-subject',
-          ...images.map((_, i) => `image-${i}`),
-          'projects-spacing',
-          'by-commissioner',
-          ...projects.map((_, i) => `project-${i}`),
-          'colors-spacing',
-          'by-color',
-          ...colors.map((color) => `color-${color}`),
-          'randomly-spacing',
-          'randomly',
-          'empty-spacing',
-          'empty',
-          'about-spacing',
-          'about',
-        ]
-        
-        allRowIds.forEach((rowId, index) => {
-          setTimeout(() => {
-            setVisibleRows(prev => new Set([...prev, rowId]))
-          }, index * 100)
-        })
-      }, 2000)
-    }, 100) // Small delay to ensure content is loaded
-    
-    return () => {
-      clearTimeout(timer1)
-      if (timer2) clearTimeout(timer2)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length, projects.length, colors.length, isSelectionMode])
+  // About content lines
+  const aboutLines = [
+    { type: 'text' as const, content: 'Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, "cup") is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.', tight: false },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Download portfolio', tight: false },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Selected Pubblications', tight: true },
+    { type: 'text' as const, content: 'Arxipelag - Sul Sentiero', tight: true },
+    { type: 'text' as const, content: 'Phroom, Zone Magazine - Teleonomia', tight: true },
+    { type: 'text' as const, content: 'Perimetro - La Cattedrale', tight: true },
+    { type: 'text' as const, content: 'C41 - Boring Cactus', tight: true },
+    { type: 'text' as const, content: 'Highsnobiety, Nss sport, Hypebeast - Nike ACG Train', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Selected Exhibitions', tight: true },
+    { type: 'text' as const, content: '@Daste Bergamo, "One Eye Sees, The Other Feels", 30/04/2022 - 14/05/2022', tight: true },
+    { type: 'text' as const, content: '@Studio Cratere, "Everything Be Revealed In Time", 05/04/2024 - 03/05/2024', tight: true },
+    { type: 'text' as const, content: '@Studio Cratere, "Lucid Dreams", 13/06/2024 - 12/07/2024', tight: true },
+    { type: 'text' as const, content: '@Studio Cratere, "by PHONE", 23/10/2024 - review on Phroom and Outpump', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Commissions', tight: true },
+    { type: 'text' as const, content: 'Represented by C41.eu', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'studio@cratere.studio', tight: true },
+    { type: 'text' as const, content: 'M: +39 3208740367', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'General Info', tight: true },
+    { type: 'text' as const, content: 'contact@cratere.studio', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Address', tight: true },
+    { type: 'text' as const, content: 'Viale Abruzzi 32', tight: true },
+    { type: 'spacing' as const },
+    { type: 'text' as const, content: 'Website', tight: true },
+    { type: 'text' as const, content: 'Matteo Viti', tight: true },
+  ]
 
   const showImagePreview = isMobile ? centeredImageIndex !== null : hoveredIndex !== null
   const showProjectPreview = isMobile
@@ -521,8 +579,17 @@ export default function ImageList({ images, projects }: ImageListProps) {
 
   return (
     <>
+      {isMobile && (
+        <>
+          <div ref={detectionLineRef} className="mobile-detection-area-debug" aria-hidden="true" />
+          <div className="mobile-line-dashes" aria-hidden="true">
+            <span className="mobile-line-dash mobile-line-dash-left">—</span>
+            <span className="mobile-line-dash mobile-line-dash-right">—</span>
+          </div>
+        </>
+      )}
       <div ref={imageColumnRef} className={`image-column ${isReady ? 'column-ready' : ''}`}>
-        <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
+        <div className={`header-title ${isRowVisible('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
           {isSelectionMode && selectionContext && (
             <span style={{ fontSize: '14px', fontWeight: 'normal', marginLeft: '20px' }}>
@@ -534,7 +601,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
         </div>
         <div
           ref={bySubjectRef}
-          className={`header-subtitle ${visibleRows.has('by-subject') ? 'row-visible' : 'row-hidden'}`}
+          className={`header-subtitle ${isRowVisible('by-subject') ? 'row-visible' : 'row-hidden'}`}
         >
           By Subject
         </div>
@@ -546,10 +613,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
             <div
               key={image.index}
               ref={(el) => { if (el) rowRefs.current.set(`image-${index}`, el) }}
-              className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
+              className={`image-row ${isRowVisible(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
               data-image-index={index}
               onMouseEnter={() => {
-                if (!isMobile && !disabled && visibleRows.has(`image-${index}`)) setHoveredIndex(image.index)
+                if (!isMobile && !disabled && isRowVisible(`image-${index}`)) setHoveredIndex(image.index)
               }}
               onMouseLeave={() => !isMobile && setHoveredIndex(null)}
               onClick={() => !isMobile && handleImageClick(image)}
@@ -565,10 +632,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
           )
         })}
         
-        <div className={`projects-spacing ${visibleRows.has('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+        <div className={`projects-spacing ${isRowVisible('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         <div
           ref={byCommissionerRef}
-          className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}
+          className={`header-subtitle ${isRowVisible('by-commissioner') ? 'row-visible' : 'row-hidden'}`}
         >
           By Commisioner
         </div>
@@ -582,7 +649,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
             <div
               key={projectIndex}
               ref={(el) => { if (el) rowRefs.current.set(`project-${projectIndex}`, el) }}
-              className={`project-row ${visibleRows.has(`project-${projectIndex}`) ? 'row-visible' : 'row-hidden'}`}
+              className={`project-row ${isRowVisible(`project-${projectIndex}`) ? 'row-visible' : 'row-hidden'}`}
               onMouseLeave={() => {
                 if (!isMobile) {
                   setHoveredProjectIndex(null)
@@ -625,7 +692,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
                         data-project-index={projectIndex}
                         data-project-image-index={imgIndex}
                         onMouseEnter={() => {
-                          if (!disabled && visibleRows.has(`project-${projectIndex}`)) {
+                          if (!disabled && isRowVisible(`project-${projectIndex}`)) {
                             setHoveredProjectIndex(projectIndex)
                             setHoveredProjectImageIndex(imgIndex)
                           }
@@ -650,8 +717,8 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         {!isMobile && (
           <>
-            <div className={`colors-spacing ${visibleRows.has('colors-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
-            <div className={`header-subtitle ${visibleRows.has('by-color') ? 'row-visible' : 'row-hidden'}`}>By Color</div>
+            <div className={`colors-spacing ${isRowVisible('colors-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+            <div className={`header-subtitle ${isRowVisible('by-color') ? 'row-visible' : 'row-hidden'}`}>By Color</div>
             {colors.map((colorKey) => {
               const colorGroup = imagesByColor[colorKey]
               const formattedColor = colorGroup?.label ?? colorKey
@@ -662,10 +729,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
                 <div
                   key={colorKey}
                   ref={(el) => { if (el) rowRefs.current.set(`color-${colorKey}`, el) }}
-                  className={`color-row ${visibleRows.has(`color-${colorKey}`) ? 'row-visible' : 'row-hidden'}`}
+                  className={`color-row ${isRowVisible(`color-${colorKey}`) ? 'row-visible' : 'row-hidden'}`}
                   data-color-key={colorKey}
                   onMouseEnter={() => {
-                    if (visibleRows.has(`color-${colorKey}`)) {
+                    if (isRowVisible(`color-${colorKey}`)) {
                       const randomImage = getRandomImageForColor(colorKey)
                       setHoveredColor(colorKey)
                       setHoveredColorImage(randomImage)
@@ -695,12 +762,12 @@ export default function ImageList({ images, projects }: ImageListProps) {
                 </div>
               )
             })}
-            <div className={`randomly-spacing ${visibleRows.has('randomly-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+            <div className={`randomly-spacing ${isRowVisible('randomly-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
             <div
               ref={(el) => { if (el) rowRefs.current.set('randomly', el) }}
-              className={`randomly-row ${visibleRows.has('randomly') ? 'row-visible' : 'row-hidden'}`}
+              className={`randomly-row ${isRowVisible('randomly') ? 'row-visible' : 'row-hidden'}`}
               onMouseEnter={() => {
-                if (visibleRows.has('randomly')) {
+                {
                   const validImages = images.filter(img => img?.asset)
                   let pool = validImages
                   if (is4VerticalLayout()) pool = pool.filter(img => !isImageHorizontal(img))
@@ -757,10 +824,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         {!isMobile && (
           <>
-            <div className={`empty-spacing ${visibleRows.has('empty-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+            <div className={`empty-spacing ${isRowVisible('empty-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
             <div 
               ref={(el) => { if (el) rowRefs.current.set('empty', el) }}
-              className={`empty-row ${visibleRows.has('empty') ? 'row-visible' : 'row-hidden'}`}
+              className={`empty-row ${isRowVisible('empty') ? 'row-visible' : 'row-hidden'}`}
               onClick={handleEmptyClick}
               style={{ cursor: isSelectionMode ? 'pointer' : 'default' }}
             >
@@ -769,10 +836,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
           </>
         )}
         
-        <div className={`about-spacing ${visibleRows.has('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+        <div className={`about-spacing ${isRowVisible('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         <div 
           ref={(el) => { if (el) rowRefs.current.set('about', el) }}
-          className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}
+          className={`about-row ${isRowVisible('about') ? 'row-visible' : 'row-hidden'}`}
         >
           <button
             className="about-toggle"
@@ -780,37 +847,16 @@ export default function ImageList({ images, projects }: ImageListProps) {
           >
             {(expandedAbout || isMobile) ? (
               <div className="about-content">
-                <div className="about-line">Founded by Alessio Pinna, Felipe Menezes and Riccardo Alippi The crater is the circular cavity at the apex of a volcanic cone. The Crater (in Latin Crater, &quot;cup&quot;) is one of the 88 modern constellations and represents the chalice from which Apollo drank the nectar of the Gods. Studio Cratere is a photography and creative studio. We want to see the world and give it meaning.</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line">Download portfolio</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">Selected Pubblications</div>
-                <div className="about-line about-line-tight">Arxipelag - Sul Sentiero</div>
-                <div className="about-line about-line-tight">Phroom, Zone Magazine - Teleonomia</div>
-                <div className="about-line about-line-tight">Perimetro - La Cattedrale</div>
-                <div className="about-line about-line-tight">C41 - Boring Cactus</div>
-                <div className="about-line about-line-tight">Highsnobiety, Nss sport, Hypebeast - Nike ACG Train</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">Selected Exhibitions</div>
-                <div className="about-line about-line-tight">@Daste Bergamo, &quot;One Eye Sees, The Other Feels&quot;, 30/04/2022 - 14/05/2022</div>
-                <div className="about-line about-line-tight">@Studio Cratere, &quot;Everything Be Revealed In Time&quot;, 05/04/2024 - 03/05/2024</div>
-                <div className="about-line about-line-tight">@Studio Cratere, &quot;Lucid Dreams&quot;, 13/06/2024 - 12/07/2024</div>
-                <div className="about-line about-line-tight">@Studio Cratere, &quot;by PHONE&quot;, 23/10/2024 - review on Phroom and Outpump</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">Commissions</div>
-                <div className="about-line about-line-tight">Represented by C41.eu</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">studio@cratere.studio</div>
-                <div className="about-line about-line-tight">M: +39 3208740367</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">General Info</div>
-                <div className="about-line about-line-tight">contact@cratere.studio</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">Address</div>
-                <div className="about-line about-line-tight">Viale Abruzzi 32</div>
-                <div className="about-line-spacing"></div>
-                <div className="about-line about-line-tight">Website</div>
-                <div className="about-line about-line-tight">Matteo Viti</div>
+                {aboutLines.map((line, idx) => {
+                  if (line.type === 'spacing') {
+                    return <div key={idx} className="about-line-spacing" />
+                  }
+                  return (
+                    <div key={idx} className={`about-line ${line.tight ? 'about-line-tight' : ''}`}>
+                      {line.content}
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <span>+</span>
@@ -930,7 +976,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
             margin-left: 20px;
             margin-right: 20px;
             margin-top: 0;
-            padding-top: 15px;
+            padding-top: 14px;
             position: relative;
             z-index: 10;
           }
@@ -938,10 +984,18 @@ export default function ImageList({ images, projects }: ImageListProps) {
         
         .row-hidden {
           opacity: 0;
+          visibility: hidden;
         }
         
         .row-visible {
           opacity: 1;
+          visibility: visible;
+        }
+        
+        .header-subtitle.row-hidden,
+        .header-title.row-hidden {
+          opacity: 0 !important;
+          visibility: hidden !important;
         }
         
         .header-title {
@@ -1193,6 +1247,42 @@ export default function ImageList({ images, projects }: ImageListProps) {
         }
         
         @media (max-width: 768px) {
+          .mobile-detection-area-debug {
+            position: fixed;
+            top: 21px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            pointer-events: none;
+            z-index: 19;
+          }
+          .mobile-line-dashes {
+            position: fixed;
+            top: 23px;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            transform: translateY(-50%);
+          }
+          .mobile-line-dash {
+            font-size: 14px;
+            line-height: 1;
+            color: #000;
+          }
+          .mobile-line-dash-left {
+            margin-left: -24px;
+          }
+          .mobile-line-dash-right {
+            margin-right: -24px;
+          }
+        }
+        
+        @media (max-width: 768px) {
           .project-slider-overlay {
             position: fixed;
             top: 50%;
@@ -1213,6 +1303,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
             overflow-x: auto;
             overflow-y: visible;
             -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: none;
             scrollbar-width: none;
             -ms-overflow-style: none;
             touch-action: pan-x pan-y;
@@ -1228,7 +1319,7 @@ export default function ImageList({ images, projects }: ImageListProps) {
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 20vw;
+            gap: 5vw;
             flex-wrap: nowrap;
             width: max-content;
             padding-left: 10vw;
@@ -1256,4 +1347,6 @@ export default function ImageList({ images, projects }: ImageListProps) {
     </>
   )
 }
+
+
 

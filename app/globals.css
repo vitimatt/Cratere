@@ -14,12 +14,23 @@
   -webkit-font-smoothing: antialiased;
 }
 
-html,
+html {
+  max-width: 100vw;
+  overscroll-behavior: none;
+}
+
 body {
   max-width: 100vw;
-  overflow-x: hidden;
+  overflow-x: clip; /* clip avoids scroll-blocking issues in Chrome */
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  html, body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 body {

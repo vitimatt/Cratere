@@ -52,7 +52,7 @@ function DesignerPageContent() {
   const spreadPageNumber = getSpreadPageNumber(currentPage)
   const currentLayout = getLayout(spreadPageNumber)
   const displayLayout = previewLayout || currentLayout
-  const slots = getLayoutSlots(spreadPageNumber, displayLayout)
+  const slots = getLayoutSlots(spreadPageNumber, displayLayout, totalPages)
   const isSinglePage = currentPage === 1 || currentPage === totalPages
 
   const handleLayoutChange = (layoutType: LayoutType) => {
@@ -96,8 +96,8 @@ function DesignerPageContent() {
       const pageLayoutsForPDF: Record<number, { pageNumber: number; isSinglePage: boolean; slots: Array<{ id: string; width: string; height: string; left?: string; top?: string }> }> = {}
       
       // Add single pages
-      pageLayoutsForPDF[1] = { pageNumber: 1, isSinglePage: true, slots: getLayoutSlots(1, 'large-top') }
-      pageLayoutsForPDF[totalPages] = { pageNumber: totalPages, isSinglePage: true, slots: getLayoutSlots(totalPages, 'large-top') }
+      pageLayoutsForPDF[1] = { pageNumber: 1, isSinglePage: true, slots: getLayoutSlots(1, 'large-top', totalPages) }
+      pageLayoutsForPDF[totalPages] = { pageNumber: totalPages, isSinglePage: true, slots: getLayoutSlots(totalPages, 'large-top', totalPages) }
       
       // Add two-page spreads
       const spreadPages: number[] = []
@@ -106,7 +106,7 @@ function DesignerPageContent() {
       }
       spreadPages.forEach(pageNum => {
         const layout = getLayout(pageNum)
-        pageLayoutsForPDF[pageNum] = { pageNumber: pageNum, isSinglePage: false, slots: getLayoutSlots(pageNum, layout) }
+        pageLayoutsForPDF[pageNum] = { pageNumber: pageNum, isSinglePage: false, slots: getLayoutSlots(pageNum, layout, totalPages) }
       })
 
       await exportToPDF(selectedImages, pageLayoutsForPDF, title)

@@ -12,7 +12,7 @@ export interface Slot {
 
 // A4 dimensions: 210mm x 297mm
 
-export function getLayoutSlots(pageNumber: number, layoutType: LayoutType): Slot[] {
+export function getLayoutSlots(pageNumber: number, layoutType: LayoutType, totalPages?: number): Slot[] {
   if (pageNumber === 1) {
     // Cover - always large-top style
     return [
@@ -20,8 +20,8 @@ export function getLayoutSlots(pageNumber: number, layoutType: LayoutType): Slot
     ]
   }
 
-  if (pageNumber === 32) {
-    // Back cover - no slots
+  if (totalPages !== undefined && pageNumber === totalPages) {
+    // Back cover - no slots (use totalPages, not hardcoded 32)
     return []
   }
 

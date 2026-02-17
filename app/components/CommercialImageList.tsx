@@ -233,10 +233,10 @@ export default function CommercialImageList({ images, projects }: CommercialImag
     }
   }, [updateHoverFromPosition])
   
-  // Scroll handler for mobile - find which row is at top line (15px from viewport, same as homepage)
+  // Scroll handler for mobile - find which row is at top line (matches homepage)
   useEffect(() => {
     if (!isMobile) return
-    const detectionLine = 15
+    const detectionLine = 20
     const handleScroll = () => {
       let closestRow: { id: string; distance: number } | null = null
       const getMinDistance = () => (closestRow ? closestRow.distance : Infinity)
