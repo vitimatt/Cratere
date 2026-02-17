@@ -3,10 +3,11 @@
 import { useDesigner } from '../contexts/DesignerContext'
 import ImageSlot from './ImageSlot'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface ImageData {
-  asset: any
+  asset?: any
+  dataUrl?: string
   title?: string
   year: number
   index: number
@@ -22,10 +23,12 @@ interface PageSpreadProps {
 }
 
 export default function PageSpread({ pageNumber, isSinglePage = false, slots, isLayoutPreviewMode = false, previewLayout = null }: PageSpreadProps) {
-  const { selectedImages, setSelectionContext, setCurrentPage, totalPages } = useDesigner()
+  const { selectedImages, setSelectionContext, setCurrentPage, setSelectedImage, totalPages } = useDesigner()
   const router = useRouter()
   const [cursorText, setCursorText] = useState<string>('')
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [uploadingSlot, setUploadingSlot] = useState<{ pageNumber: number; slotId: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setCurrentPage(pageNumber)
@@ -42,17 +45,52 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
     return actualPageNumber === totalPages
   }
 
-  const handleSlotClick = (slotId: string) => {
-    // Prevent adding images to the back cover (last page)
-    if (isSlotOnBackCover(slotId)) {
+  const getActualPageNumber = (slotId: string) =>
+    !isSinglePage && slotId.startsWith('right-') ? pageNumber + 1 : pageNumber
+
+  const handleSlotClick = (slotId: string, e?: React.MouseEvent) => {
+    if (isSlotOnBackCover(slotId)) return
+    const actualPageNumber = getActualPageNumber(slotId)
+    const key = `${actualPageNumber}-${slotId}`
+    const image = selectedImages.has(key) ? selectedImages.get(key) : undefined
+
+    // Shift+click on empty slot: upload from files instead of going to home
+    if (e?.shiftKey && (image === null || image === undefined)) {
+      setUploadingSlot({ pageNumber: actualPageNumber, slotId })
+      fileInputRef.current?.click()
       return
     }
-    // For right-side slots in two-page spreads, use pageNumber + 1
-    const actualPageNumber = !isSinglePage && slotId.startsWith('right-') 
-      ? pageNumber + 1 
-      : pageNumber
+
     setSelectionContext({ pageNumber: actualPageNumber, slotId })
     router.push('/')
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !uploadingSlot) return
+    const { pageNumber, slotId } = uploadingSlot
+    setUploadingSlot(null)
+    ;(e.target as HTMLInputElement).value = ''
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    if (!validTypes.includes(file.type)) {
+      alert('Invalid file type. Use JPEG, PNG, GIF, or WebP.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const title = file.name.replace(/\.[^/.]+$/, '')
+      setSelectedImage(pageNumber, slotId, {
+        dataUrl,
+        title,
+        year: new Date().getFullYear(),
+        index: 0,
+      })
+    }
+    reader.onerror = () => alert('Failed to read file')
+    reader.readAsDataURL(file)
   }
 
   const handleSlotHover = () => {
@@ -155,6 +193,14 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
 
   return (
     <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+        aria-hidden
+      />
       {cursorText && (
         <div
           style={{
@@ -234,7 +280,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                   slotId={slot.id}
                   pageNumber={pageNumber}
                   image={getImageForSlot(slot.id)}
-                  onClick={() => handleSlotClick(slot.id)}
+                  onClick={(e) => handleSlotClick(slot.id, e)}
                   width="100%"
                   height="100%"
                   aspectRatio={slot.aspectRatio}
@@ -294,7 +340,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                       slotId={slot.id}
                       pageNumber={pageNumber}
                       image={getImageForSlot(slot.id)}
-                      onClick={() => handleSlotClick(slot.id)}
+                      onClick={(e) => handleSlotClick(slot.id, e)}
                       width="100%"
                       height="100%"
                       aspectRatio={slot.aspectRatio}
@@ -352,7 +398,7 @@ export default function PageSpread({ pageNumber, isSinglePage = false, slots, is
                       slotId={slot.id}
                       pageNumber={pageNumber}
                       image={getImageForSlot(slot.id)}
-                      onClick={() => handleSlotClick(slot.id)}
+                      onClick={(e) => handleSlotClick(slot.id, e)}
                       width="100%"
                       height="100%"
                       aspectRatio={slot.aspectRatio}

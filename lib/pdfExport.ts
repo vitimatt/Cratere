@@ -2,7 +2,8 @@ import jsPDF from 'jspdf'
 import { urlFor } from './imageUrl'
 
 interface ImageData {
-  asset: any
+  asset?: any
+  dataUrl?: string
   title?: string
   year: number
   index: number
@@ -131,9 +132,8 @@ async function renderPage(
     console.log(`Looking for key: "${key}"`)
     console.log(`  Found:`, image ? 'YES - has image' : 'NO - empty')
     if (image) {
-      const assetRef = image.asset?._ref || image.asset?._id || 'no ref/id'
-      console.log(`  Image asset:`, assetRef)
-      console.log(`  Image URL will be:`, urlFor(image.asset).width(2000).quality(90).url())
+      const source = image.dataUrl ? 'local dataUrl' : (image.asset?._ref || image.asset?._id || 'no ref/id')
+      console.log(`  Image source:`, source)
     }
     
     // Debug: show all keys in the map
@@ -143,34 +143,35 @@ async function renderPage(
       console.log(`  Keys containing "${slot.id}":`, matchingKeys)
     }
 
-    if (image && image.asset) {
+    if (image && (image.dataUrl || image.asset)) {
       try {
-        // Get image URL - use higher quality for PDF
-        // Generate a unique URL for each image to ensure proper loading
-        const imageUrl = urlFor(image.asset).width(2000).quality(90).url()
-        console.log(`Loading image for slot ${slot.id} (key: ${key}):`, imageUrl)
-        console.log(`  Asset ref:`, image.asset?._ref || image.asset?._id)
-
         const slotLeft = mmToNum(slot.left || '0')
         const slotTop = mmToNum(slot.top || '0')
         const slotWidth = mmToNum(slot.width)
         const slotHeight = mmToNum(slot.height)
 
-        // Load image with retry logic
+        // Use local data URL directly, or fetch Sanity asset via proxy
         let imgDataUrl: string | null = null
-        let retries = 3
-        while (retries > 0) {
-          try {
-            imgDataUrl = await loadImage(imageUrl)
-            break
-          } catch (error) {
-            retries--
-            if (retries === 0) throw error
-            console.warn(`Retrying image load for slot ${slot.id}, ${retries} attempts left`)
-            await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1s before retry
+        if (image.dataUrl) {
+          imgDataUrl = image.dataUrl
+          console.log(`Using local image for slot ${slot.id}`)
+        } else {
+          const imageUrl = urlFor(image.asset).width(2000).quality(90).url()
+          console.log(`Loading image for slot ${slot.id} (key: ${key}):`, imageUrl)
+          let retries = 3
+          while (retries > 0) {
+            try {
+              imgDataUrl = await loadImage(imageUrl)
+              break
+            } catch (error) {
+              retries--
+              if (retries === 0) throw error
+              console.warn(`Retrying image load for slot ${slot.id}, ${retries} attempts left`)
+              await new Promise(resolve => setTimeout(resolve, 1000))
+            }
           }
         }
-        
+
         if (!imgDataUrl) {
           throw new Error(`Failed to load image for slot ${slot.id}`)
         }

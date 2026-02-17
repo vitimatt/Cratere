@@ -3,7 +3,8 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
 
 interface ImageData {
-  asset: any
+  asset?: any
+  dataUrl?: string // Local upload: base64 data URL, used for PDF only
   title?: string
   year: number
   index: number

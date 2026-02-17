@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { urlFor } from '../../lib/imageUrl'
 
 interface ImageData {
-  asset: any
+  asset?: any
+  dataUrl?: string
   title?: string
   year: number
   index: number
@@ -15,7 +16,7 @@ interface ImageSlotProps {
   slotId: string
   pageNumber: number
   image: ImageData | null | undefined
-  onClick: () => void
+  onClick?: (e?: React.MouseEvent) => void
   width?: string
   height?: string
   aspectRatio?: 'square' | '3:2' | '2:3' | 'free'
@@ -125,7 +126,7 @@ export default function ImageSlot({
         </div>
       )}
       <div
-        onClick={isPreviewMode ? undefined : onClick}
+        onClick={isPreviewMode ? undefined : (e) => onClick?.(e)}
         onMouseMove={isPreviewMode ? undefined : handleMouseMove}
         onMouseLeave={isPreviewMode ? undefined : handleMouseLeave}
         style={{
@@ -142,9 +143,9 @@ export default function ImageSlot({
           aspectRatio: getAspectRatioCSS(),
         }}
       >
-      {!isPreviewMode && image && (
+      {!isPreviewMode && image && (image.dataUrl || image.asset) && (
         <img
-          src={urlFor(image.asset).width(1200).url()}
+          src={image.dataUrl ?? urlFor(image.asset).width(1200).url()}
           alt={image.title || `Image ${image.index}`}
           onLoad={handleImageLoad}
           style={{
