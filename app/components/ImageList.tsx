@@ -320,9 +320,10 @@ export default function ImageList({ images, projects }: ImageListProps) {
   }, [allRowIdsOrdered])
 
   const isRowVisible = useCallback((rowId: string) => {
+    if (isSelectionMode) return true
     const idx = rowIdToIndex.get(rowId)
     return idx !== undefined && idx < visibleRowCount
-  }, [rowIdToIndex, visibleRowCount])
+  }, [rowIdToIndex, visibleRowCount, isSelectionMode])
 
   useEffect(() => {
     visibleRowCountRef.current = visibleRowCount
