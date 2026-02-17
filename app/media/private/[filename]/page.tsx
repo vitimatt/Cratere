@@ -16,8 +16,6 @@ export default async function PrivateMediaPage({
     filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
   ]
 
-  let found = false
-
   for (const candidate of candidates) {
     const doc = await client.fetch<{ asset?: { _id?: string } } | null>(
       `*[_type == "privateMedia" && file.asset->originalFilename == $filename][0]{
@@ -27,7 +25,6 @@ export default async function PrivateMediaPage({
     )
 
     if (doc?.asset?._id) {
-      found = true
       const pdfUrl = `/api/media-proxy?filename=${encodeURIComponent(candidate)}`
       return (
         <div style={{ margin: 0, height: '100vh', overflow: 'hidden' }}>

@@ -4,7 +4,7 @@ export default defineType({
   name: 'privateMedia',
   title: 'Private Media (PDFs)',
   type: 'document',
-  description: 'PDFs uploaded here are accessible at cratere.studio/media/private/[filename]',
+  description: 'PDFs uploaded here are accessible at cratere.studio/Media/private/[filename]',
   fields: [
     defineField({
       name: 'title',
@@ -20,7 +20,7 @@ export default defineType({
         accept: '.pdf',
       },
       validation: (Rule) => Rule.required(),
-      description: 'The filename will be used in the URL: /media/private/filename.pdf',
+      description: 'The filename will be used in the URL: /Media/private/filename.pdf',
     }),
   ],
   preview: {
@@ -31,7 +31,7 @@ export default defineType({
     prepare({ title, filename }) {
       return {
         title: title || filename || 'Untitled PDF',
-        subtitle: filename ? `URL: /media/private/${filename}` : '',
+        subtitle: filename ? `URL: /Media/private/${filename}` : '',
       }
     },
   },
