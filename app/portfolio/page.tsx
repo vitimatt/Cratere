@@ -1,4 +1,7 @@
-import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
+import { notFound, redirect } from 'next/navigation'
+import PdfEmbed from '../components/PdfEmbed'
+import { isMobileUserAgent } from '../../lib/isMobileUserAgent'
 import { client } from '../../lib/sanity'
 
 export const dynamic = 'force-dynamic'
@@ -16,17 +19,11 @@ export default async function PortfolioPage() {
     notFound()
   }
 
-  return (
-    <div style={{ margin: 0, height: '100vh', overflow: 'hidden' }}>
-      <iframe
-        src="/api/portfolio-pdf"
-        style={{
-          width: '100%',
-          height: '100%',
-          border: 'none',
-        }}
-        title="Portfolio PDF"
-      />
-    </div>
-  )
+  const pdfUrl = '/api/portfolio-pdf'
+  const userAgent = (await headers()).get('user-agent')
+  if (isMobileUserAgent(userAgent)) {
+    redirect(pdfUrl)
+  }
+
+  return <PdfEmbed src={pdfUrl} title="Portfolio PDF" />
 }
