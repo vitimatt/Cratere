@@ -8,7 +8,7 @@ export const revalidate = 0
 
 async function getProjects() {
   const projects = await client.fetch(`
-    *[_type == "project"] | order(year desc) {
+    *[_type == "project" && hideFromMain != true] | order(year desc) {
       title,
       client,
       year,

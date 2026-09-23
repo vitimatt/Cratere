@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { urlFor } from '../../lib/imageUrl'
+import { previewImageUrl } from '../../lib/previewImageUrl'
+import { usePreloadPreviewImages } from '../../hooks/usePreloadPreviewImages'
+import { useVisualLines } from '../../hooks/useVisualLines'
 import type { AboutLine } from '../../lib/siteSettings'
 
 // Mobile: vertical position (px from viewport top) - fallback when ref unavailable
@@ -35,14 +37,21 @@ interface Project {
   }>
 }
 
+interface StudioIntro {
+  bio: string
+  email: string
+  phone: string
+}
+
 interface CommercialImageListProps {
   images: ImageItem[]
   projects: Project[]
   aboutLines: AboutLine[]
+  studioIntro: StudioIntro
 }
 
-export default function CommercialImageList({ images, projects, aboutLines }: CommercialImageListProps) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+export default function CommercialImageList({ images, projects, aboutLines, studioIntro }: CommercialImageListProps) {
+  usePreloadPreviewImages(images, projects)
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
   const [hoveredProjectImageIndex, setHoveredProjectImageIndex] = useState<number | null>(null)
   const [hoveredColor, setHoveredColor] = useState<string | null>(null)
@@ -51,18 +60,40 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
   const [visibleRows, setVisibleRows] = useState<Set<string>>(new Set())
   const [isReady, setIsReady] = useState<boolean>(false)
   const [isMobile, setIsMobile] = useState<boolean>(false)
-  const [centeredImageIndex, setCenteredImageIndex] = useState<number | null>(null)
   const [centeredProjectIndex, setCenteredProjectIndex] = useState<{ projectIndex: number; imageIndex: number } | null>(null)
   const [centeredColor, setCenteredColor] = useState<string | null>(null)
   const [centeredRandomly, setCenteredRandomly] = useState<boolean>(false)
   
   // Refs for tracking row positions
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map())
-  const bySubjectRef = useRef<HTMLDivElement>(null)
-  const byCommissionerRef = useRef<HTMLDivElement>(null)
   const mousePosRef = useRef<{ x: number; y: number } | null>(null)
   const imageColumnRef = useRef<HTMLDivElement | null>(null)
   const detectionLineRef = useRef<HTMLDivElement>(null)
+  const visibleRowsRef = useRef(visibleRows)
+  const animationDoneRef = useRef(false)
+  const hasStartedAnimationRef = useRef(false)
+  const { lines: bioLines, ready: bioReady } = useVisualLines(studioIntro.bio, imageColumnRef)
+  const bioLineCount = Math.max(bioLines.length, 1)
+  const introSpacingId = `intro-line-${bioLineCount}`
+  const introEmailId = `intro-line-${bioLineCount + 1}`
+  const introPhoneId = `intro-line-${bioLineCount + 2}`
+
+  useEffect(() => {
+    visibleRowsRef.current = visibleRows
+  }, [visibleRows])
+
+  // After animation finishes, keep newly measured bio rows visible on resize
+  useEffect(() => {
+    if (!animationDoneRef.current || !bioReady) return
+    setVisibleRows((prev) => {
+      const next = new Set(prev)
+      for (let i = 0; i < bioLineCount; i++) next.add(`intro-line-${i}`)
+      next.add(introSpacingId)
+      next.add(introEmailId)
+      next.add(introPhoneId)
+      return next
+    })
+  }, [bioLineCount, bioReady, introSpacingId, introEmailId, introPhoneId])
 
   const updateHoverFromPosition = useCallback(() => {
     if (isMobile) return
@@ -70,73 +101,24 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
     if (!pos || !imageColumnRef.current) return
     const el = document.elementFromPoint(pos.x, pos.y)
     if (!el || !imageColumnRef.current.contains(el)) {
-      setHoveredIndex(null)
       setHoveredProjectIndex(null)
       setHoveredProjectImageIndex(null)
       return
-    }
-    const imageRow = el.closest('.image-row') as HTMLElement | null
-    if (imageRow) {
-      const idx = imageRow.getAttribute('data-image-index')
-      if (idx !== null && visibleRows.has(`image-${idx}`)) {
-        const index = parseInt(idx, 10)
-        setHoveredIndex(images[index]?.index ?? null)
-        setHoveredProjectIndex(null)
-        setHoveredProjectImageIndex(null)
-        return
-      }
     }
     const projectSection = el.closest('.project-image-section') as HTMLElement | null
     if (projectSection) {
       const pIdx = projectSection.getAttribute('data-project-index')
       const imgIdx = projectSection.getAttribute('data-project-image-index')
       if (pIdx !== null && imgIdx !== null && visibleRows.has(`project-${pIdx}`)) {
-        setHoveredIndex(null)
         setHoveredProjectIndex(parseInt(pIdx, 10))
         setHoveredProjectImageIndex(parseInt(imgIdx, 10))
         return
       }
     }
-    setHoveredIndex(null)
     setHoveredProjectIndex(null)
     setHoveredProjectImageIndex(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images, visibleRows, isMobile])
-
-  const extractTitleFromFilename = (asset: any, assetMetadata?: any): string => {
-    let filename = ''
-    
-    // Try to get original filename from metadata first
-    if (assetMetadata?.originalFilename) {
-      filename = assetMetadata.originalFilename
-    } else if (asset?.originalFilename) {
-      filename = asset.originalFilename
-    } else if (asset?._ref) {
-      // Fallback: try to extract from asset reference
-      const parts = asset._ref.split('-')
-      if (parts.length > 0) {
-        filename = parts[parts.length - 1]
-      }
-    }
-    
-    if (!filename) return 'Untitled'
-    
-    // Remove file extension
-    filename = filename.replace(/\.[^/.]+$/, '')
-    
-    // Split by '-' to separate title from color
-    // Everything before the last '-' is the title
-    const parts = filename.split('-')
-    if (parts.length > 1) {
-      // Join all parts except the last one (which is the color)
-      const titlePart = parts.slice(0, -1).join('-')
-      // Replace underscores with spaces
-      return titlePart.replace(/_/g, ' ').trim()
-    } else {
-      // No '-' found, just replace underscores with spaces
-      return filename.replace(/_/g, ' ').trim()
-    }
-  }
+  }, [visibleRows, isMobile])
 
   const extractColorFromFilename = (asset: any, assetMetadata?: any): string | null => {
     let filename = ''
@@ -254,26 +236,11 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         if (rect.top <= detectionLineY && rect.bottom >= detectionLineY) return 0
         return Math.abs(rowCenter - detectionLineY)
       }
-      if (bySubjectRef.current) {
-        const rect = bySubjectRef.current.getBoundingClientRect()
+      const introEl = rowRefs.current.get('intro')
+      if (introEl) {
+        const rect = introEl.getBoundingClientRect()
         const distance = distToLine(rect)
-        if (distance < getMinDistance()) closestRow = { id: 'by-subject', distance }
-      }
-      images.forEach((_, index) => {
-        const el = rowRefs.current.get(`image-${index}`)
-        if (el) {
-          const rect = el.getBoundingClientRect()
-          const distance = distToLine(rect)
-          if (distance < getMinDistance()) closestRow = { id: `image-${index}`, distance }
-        }
-      })
-      if (byCommissionerRef.current) {
-        const rect = byCommissionerRef.current.getBoundingClientRect()
-        const distance = distToLine(rect)
-        if (distance < getMinDistance()) {
-          const firstWithImages = projects.findIndex(p => p?.images?.some(img => img?.asset))
-          if (firstWithImages >= 0) closestRow = { id: `project-${firstWithImages}`, distance }
-        }
+        if (distance < getMinDistance()) closestRow = { id: 'intro', distance }
       }
       projects.forEach((_, projectIndex) => {
         const el = rowRefs.current.get(`project-${projectIndex}`)
@@ -289,23 +256,21 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         const distance = distToLine(rect)
         if (distance < getMinDistance()) closestRow = { id: 'about', distance }
       }
-      // Update state based on closest row
+      // Update state based on closest row (only if that row has finished loading in)
       if (closestRow) {
-        if (closestRow.id.startsWith('image-')) {
-          const index = parseInt(closestRow.id.replace('image-', ''))
-          setCenteredImageIndex(images[index]?.index || null)
-          setCenteredProjectIndex(null)
-        } else if (closestRow.id.startsWith('project-')) {
-          const projectIndex = parseInt(closestRow.id.replace('project-', ''))
-          const project = projects[projectIndex]
-          if (project?.images?.some(img => img?.asset)) {
-            setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
-            setCenteredImageIndex(null)
-          } else {
+        if (closestRow.id.startsWith('project-')) {
+          if (!visibleRowsRef.current.has(closestRow.id)) {
             setCenteredProjectIndex(null)
+          } else {
+            const projectIndex = parseInt(closestRow.id.replace('project-', ''))
+            const project = projects[projectIndex]
+            if (project?.images?.some(img => img?.asset)) {
+              setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
+            } else {
+              setCenteredProjectIndex(null)
+            }
           }
         } else {
-          setCenteredImageIndex(null)
           setCenteredProjectIndex(null)
         }
       }
@@ -334,7 +299,7 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, images, projects])
+  }, [isMobile, images, projects, visibleRows])
 
   const getRandomImageForColor = (colorKey: string): ImageItem | null => {
     const colorGroup = imagesByColor[colorKey]
@@ -376,40 +341,54 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
   useEffect(() => {
     // Wait for content to load (check if we have data)
     if (images.length === 0 && projects.length === 0) return
-    
+    if (!bioReady) return
+    if (hasStartedAnimationRef.current) return
+
+    hasStartedAnimationRef.current = true
+    animationDoneRef.current = false
     // Normal animation for first load
     let timer2: NodeJS.Timeout | null = null
-    
+    const rowTimers: NodeJS.Timeout[] = []
+    const countAtStart = bioLineCount
+
     // Show "Cratere" first
     const timer1 = setTimeout(() => {
       setVisibleRows(new Set(['cratere']))
-      
+
       // Wait 2 seconds, then show remaining rows with 100ms delay each
       timer2 = setTimeout(() => {
+        const bioIds = Array.from({ length: countAtStart }, (_, i) => `intro-line-${i}`)
         const allRowIds = [
-          'by-subject',
-          ...images.map((_, i) => `image-${i}`),
-          'projects-spacing',
-          'by-commissioner',
+          ...bioIds,
+          `intro-line-${countAtStart}`,
+          `intro-line-${countAtStart + 1}`,
+          `intro-line-${countAtStart + 2}`,
+          'intro-spacing',
           ...projects.map((_, i) => `project-${i}`),
-          'about-spacing',
-          'about',
+          'projects-spacing',
+          ...aboutLines.map((_, i) => `about-line-${i}`),
         ]
-        
+
         allRowIds.forEach((rowId, index) => {
-          setTimeout(() => {
+          const t = setTimeout(() => {
             setVisibleRows(prev => new Set([...prev, rowId]))
+            if (index === allRowIds.length - 1) {
+              animationDoneRef.current = true
+            }
           }, index * 100)
+          rowTimers.push(t)
         })
       }, 2000)
     }, 100) // Small delay to ensure content is loaded
-    
+
     return () => {
+      hasStartedAnimationRef.current = false
       clearTimeout(timer1)
       if (timer2) clearTimeout(timer2)
+      rowTimers.forEach(clearTimeout)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length, projects.length])
+  }, [images.length, projects.length, aboutLines.length, bioReady])
 
   return (
     <>
@@ -426,43 +405,31 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         <div className={`header-title ${visibleRows.has('cratere') ? 'row-visible' : 'row-hidden'}`} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', width: '100%' }}>
           <span>Cratere</span>
         </div>
-        <div 
-          ref={bySubjectRef}
-          className={`header-subtitle ${visibleRows.has('by-subject') ? 'row-visible' : 'row-hidden'}`}
-          data-row-id="by-subject"
-        >
-          By Subject
-        </div>
-        {images.map((image, index) => {
-          const title = image.title || extractTitleFromFilename(image.asset, image.assetMetadata)
-          
-          return (
-            <div
-              key={image.index}
-              ref={(el) => {
-                if (el) rowRefs.current.set(`image-${index}`, el)
-              }}
-              className={`image-row ${visibleRows.has(`image-${index}`) ? 'row-visible' : 'row-hidden'}`}
-              data-row-id={`image-${index}`}
-              data-image-index={index}
-              onMouseEnter={() => !isMobile && setHoveredIndex(image.index)}
-              onMouseLeave={() => !isMobile && setHoveredIndex(null)}
-            >
-              <span className="image-number">{image.index}</span>
-              <span className="image-title">{title}</span>
-              <span className="image-year">{image.year}</span>
-            </div>
-          )
-        })}
-        
-        <div className={`projects-spacing ${visibleRows.has('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         <div
-          ref={byCommissionerRef}
-          className={`header-subtitle ${visibleRows.has('by-commissioner') ? 'row-visible' : 'row-hidden'}`}
+          ref={(el) => { if (el) rowRefs.current.set('intro', el) }}
+          className="about-row"
         >
-          By Commisioner
+          <div className="about-content">
+            {(bioLines.length > 0 ? bioLines : [studioIntro.bio]).map((line, i, arr) => (
+              <div
+                key={`bio-${i}`}
+                className={`about-line about-line-nowrap ${i < arr.length - 1 ? 'about-line-bio-continued' : ''} ${visibleRows.has(`intro-line-${i}`) ? 'row-visible' : 'row-hidden'}`}
+              >
+                {line}
+              </div>
+            ))}
+            <div className={`about-line-spacing ${visibleRows.has(introSpacingId) ? 'row-visible' : 'row-hidden'}`} />
+            <div className={`about-line about-line-tight ${visibleRows.has(introEmailId) ? 'row-visible' : 'row-hidden'}`}>
+              <a href={`mailto:${studioIntro.email}`} className="about-link">{studioIntro.email}</a>
+            </div>
+            <div className={`about-line about-line-tight ${visibleRows.has(introPhoneId) ? 'row-visible' : 'row-hidden'}`}>
+              <a href={`tel:${studioIntro.phone.replace(/^M:\s*/i, '').replace(/\s/g, '')}`} className="about-link">
+                {studioIntro.phone}
+              </a>
+            </div>
+          </div>
         </div>
-        
+        <div className={`projects-spacing ${visibleRows.has('intro-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         {projects.map((project, projectIndex) => {
           const validImages = project.images?.filter(img => img?.asset) || []
           const imageCount = validImages.length
@@ -523,18 +490,19 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
             </div>
           )
         })}
-        
-        <div className={`about-spacing ${visibleRows.has('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+        <div className={`projects-spacing ${visibleRows.has('projects-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
+
         <div
           ref={(el) => { if (el) rowRefs.current.set('about', el) }}
-          className={`about-row ${visibleRows.has('about') ? 'row-visible' : 'row-hidden'}`}
+          className="about-row"
         >
           <div className="about-content">
             {aboutLines.map((line, idx) => {
+              const lineVisible = visibleRows.has(`about-line-${idx}`) ? 'row-visible' : 'row-hidden'
               if (line.type === 'spacing') {
-                return <div key={idx} className="about-line-spacing" />
+                return <div key={idx} className={`about-line-spacing ${lineVisible}`} />
               }
-              const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''}`
+              const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''} ${lineVisible}`
               if (line.type === 'link') {
                 const isInternal = line.url.startsWith('/')
                 const isPdf = !isInternal && line.url.toLowerCase().includes('.pdf')
@@ -617,22 +585,6 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         </div>
       </div>
       
-      {(isMobile ? centeredImageIndex !== null : hoveredIndex !== null) && (() => {
-        const imageIndex = isMobile ? centeredImageIndex : hoveredIndex
-        if (!imageIndex) return null
-        const image = images[imageIndex - 1]
-        if (!image?.asset) return null
-        return (
-          <div className="image-preview-overlay">
-            <img
-              src={urlFor(image.asset).width(2000).url()}
-              alt={image.title || extractTitleFromFilename(image.asset, image.assetMetadata) || `Image ${imageIndex}`}
-              className="image-preview"
-            />
-          </div>
-        )
-      })()}
-      
       {/* Desktop: Show single image on hover */}
       {!isMobile && hoveredProjectIndex !== null && hoveredProjectImageIndex !== null && (() => {
         const project = projects[hoveredProjectIndex]
@@ -643,7 +595,7 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         return (
           <div className="image-preview-overlay">
             <img
-              src={urlFor(image.asset).width(2000).url()}
+              src={previewImageUrl(image.asset)}
               alt={project.title || `Project ${hoveredProjectIndex + 1} Image ${hoveredProjectImageIndex + 1}`}
               className="image-preview"
             />
@@ -664,7 +616,7 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
                 {validImages.map((image, imgIndex) => (
                   <div key={imgIndex} className="project-slider-item">
                     <img
-                      src={urlFor(image.asset).width(2000).url()}
+                      src={previewImageUrl(image.asset)}
                       alt={project.title || `Project ${centeredProjectIndex.projectIndex + 1} Image ${imgIndex + 1}`}
                       className="project-slider-image"
                     />
@@ -680,6 +632,7 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         .image-column {
           width: 30vw;
           margin: 150px auto 0;
+          padding-bottom: 150px;
           position: relative;
           z-index: 10;
         }
@@ -717,39 +670,6 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
           line-height: 130%;
           margin-bottom: calc(1em * 1.3);
           position: relative;
-          z-index: 10;
-        }
-        
-        .image-row {
-          display: flex;
-          align-items: baseline;
-          padding: 0;
-          margin: 0;
-          position: relative;
-          line-height: 130%;
-          min-height: 1.3em;
-          z-index: 10;
-        }
-        
-        .image-number {
-          text-align: left;
-          position: absolute;
-          left: 0;
-          z-index: 10;
-        }
-        
-        .image-title {
-          position: absolute;
-          left: 30px;
-          text-align: left;
-          z-index: 10;
-        }
-        
-        .image-year {
-          text-align: right;
-          margin-left: auto;
-          position: absolute;
-          right: 0;
           z-index: 10;
         }
         
@@ -791,14 +711,9 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
           left: 0;
         }
         
-        .about-spacing {
-          margin-top: calc(1em * 1.3 * 3);
-        }
-        
         .about-row {
           position: relative;
           z-index: 10;
-          margin-bottom: 150px;
         }
         
         .about-content {
@@ -808,6 +723,14 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         .about-line {
           line-height: 130%;
           margin-bottom: calc(1em * 1.3);
+        }
+
+        .about-line-nowrap {
+          white-space: nowrap;
+        }
+
+        .about-line-bio-continued {
+          margin-bottom: 0;
         }
         
         .about-line-tight {
@@ -863,9 +786,13 @@ export default function CommercialImageList({ images, projects, aboutLines }: Co
         .project-title {
           position: absolute;
           left: 30px;
+          right: 5ch;
           text-align: left;
           z-index: 10;
           pointer-events: none;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         .project-year {

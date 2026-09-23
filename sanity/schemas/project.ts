@@ -25,6 +25,20 @@ export default defineType({
       validation: (Rule) => Rule.required().integer().min(1900).max(2100),
     }),
     defineField({
+      name: 'hideFromCommercial',
+      title: 'Hide from commercial',
+      type: 'boolean',
+      description: 'When on, this project and its images will not appear on the commercial page.',
+      initialValue: false,
+    }),
+    defineField({
+      name: 'hideFromMain',
+      title: 'Hide from main',
+      type: 'boolean',
+      description: 'When on, this project and its images will not appear on the homepage.',
+      initialValue: false,
+    }),
+    defineField({
       name: 'images',
       title: 'Images',
       type: 'array',

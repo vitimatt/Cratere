@@ -1,5 +1,5 @@
 import { client } from '../../lib/sanity'
-import { getSiteSettings, buildAboutLines } from '../../lib/siteSettings'
+import { getSiteSettings, buildAboutLines, getStudioIntro } from '../../lib/siteSettings'
 import CommercialImageList from '../components/CommercialImageList'
 
 // Force dynamic rendering to always fetch fresh data
@@ -8,7 +8,7 @@ export const revalidate = 0
 
 async function getProjects() {
   const projects = await client.fetch(`
-    *[_type == "project"] | order(year desc) {
+    *[_type == "project" && hideFromCommercial != true] | order(year desc) {
       title,
       client,
       year,
@@ -59,7 +59,8 @@ export default async function Commercial() {
     getProjects(),
     getSiteSettings(),
   ])
-  const aboutLines = buildAboutLines(siteSettings)
+  const aboutLines = buildAboutLines(siteSettings, { omitStudioIntro: true })
+  const studioIntro = getStudioIntro(siteSettings)
   
   // Flatten all images from all projects into a single list
   const allImages: Array<{
@@ -103,7 +104,7 @@ export default async function Commercial() {
 
   return (
     <main className="min-h-screen bg-white">
-      <CommercialImageList images={allImages} projects={projects} aboutLines={aboutLines} />
+      <CommercialImageList images={allImages} projects={projects} aboutLines={aboutLines} studioIntro={studioIntro} />
     </main>
   )
 }

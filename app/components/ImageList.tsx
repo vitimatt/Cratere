@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react'
 
 // Mobile: vertical position (px from viewport top) - fallback when ref unavailable
 const MOBILE_DETECTION_LINE = 23
 import { useRouter } from 'next/navigation'
-import { urlFor } from '../../lib/imageUrl'
+import { previewImageUrl } from '../../lib/previewImageUrl'
+import { usePreloadPreviewImages } from '../../hooks/usePreloadPreviewImages'
+import { useVisualLines } from '../../hooks/useVisualLines'
 import { useDesigner, LayoutType } from '../contexts/DesignerContext'
 import type { AboutLine } from '../../lib/siteSettings'
 
@@ -38,6 +40,7 @@ interface ImageListProps {
 
 export default function ImageList({ images, projects, aboutLines }: ImageListProps) {
   const router = useRouter()
+  usePreloadPreviewImages(images, projects)
   const { selectionContext, setSelectedImage, setSelectionContext, getLayout } = useDesigner()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [hoveredProjectIndex, setHoveredProjectIndex] = useState<number | null>(null)
@@ -65,6 +68,11 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
   const visibleRowCountRef = useRef(0)
   const rowIdToIndexRef = useRef<Map<string, number>>(new Map())
   const detectionLineRef = useRef<HTMLDivElement>(null)
+
+  const bioText =
+    aboutLines[0]?.type === 'text' ? aboutLines[0].content : ''
+  const { lines: bioVisualLines, ready: bioReady } = useVisualLines(bioText, imageColumnRef)
+  const bioLineCount = bioText ? Math.max(bioVisualLines.length, 1) : 0
 
   const updateHoverFromPosition = useCallback(() => {
     if (isMobile) return
@@ -311,9 +319,20 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         'empty'
       )
     }
-    base.push('about-spacing', 'about')
+    const aboutIds: string[] = []
+    let aboutStep = 0
+    aboutLines.forEach((line, i) => {
+      if (i === 0 && line.type === 'text' && bioLineCount > 0) {
+        for (let j = 0; j < bioLineCount; j++) {
+          aboutIds.push(`about-line-${aboutStep++}`)
+        }
+      } else {
+        aboutIds.push(`about-line-${aboutStep++}`)
+      }
+    })
+    base.push('about-spacing', ...aboutIds)
     return base
-  }, [images.length, projects.length, colors, isMobile])
+  }, [images.length, projects.length, colors, isMobile, aboutLines, bioLineCount])
 
   const rowIdToIndex = useMemo(() => {
     const m = new Map<string, number>()
@@ -333,15 +352,19 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
   }, [visibleRowCount, rowIdToIndex])
 
   const hasStartedAnimationRef = useRef(false)
+  const animationCompleteRef = useRef(false)
   // Animation: white -> Cratere instantly -> 2s -> lines in quick succession (instantly each)
   useEffect(() => {
     if (images.length === 0 && projects.length === 0) return
+    if (bioText && !bioReady) return
     if (isSelectionMode) {
       setVisibleRowCount(allRowIdsOrdered.length)
+      animationCompleteRef.current = true
       return () => {}
     }
     if (hasStartedAnimationRef.current) return () => {}
     hasStartedAnimationRef.current = true
+    animationCompleteRef.current = false
     const total = allRowIdsOrdered.length
     const timeouts: NodeJS.Timeout[] = []
     // Show Cratere (index 0) instantly
@@ -351,12 +374,17 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
     const t2 = setTimeout(() => {
       let count = 1
       const showNext = () => {
-        if (count >= total) return
+        if (count >= total) {
+          animationCompleteRef.current = true
+          return
+        }
         count++
         setVisibleRowCount(count)
         if (count < total) {
           const t = setTimeout(showNext, 80)
           timeouts.push(t)
+        } else {
+          animationCompleteRef.current = true
         }
       }
       const t = setTimeout(showNext, 80)
@@ -367,7 +395,15 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
       hasStartedAnimationRef.current = false
       timeouts.forEach(clearTimeout)
     }
-  }, [images.length, projects.length, colors.length, isSelectionMode, isMobile, allRowIdsOrdered])
+    // Intentionally omit allRowIdsOrdered / bioLineCount so resize remapping does not restart
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images.length, projects.length, colors.length, isSelectionMode, isMobile, bioReady, bioText])
+
+  // After animation finishes, expand visibility if bio wrap count changes on resize
+  useEffect(() => {
+    if (!animationCompleteRef.current && !isSelectionMode) return
+    setVisibleRowCount(allRowIdsOrdered.length)
+  }, [allRowIdsOrdered.length, isSelectionMode])
 
   // Scroll handler for mobile - find which row is at top line of text
   useEffect(() => {
@@ -419,32 +455,47 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         const distance = distToLine(rect)
         if (distance < getMinDistance()) closestRow = { id: 'about', distance }
       }
+      const clearCentered = () => {
+        setCenteredImageIndex(null)
+        setCenteredProjectIndex(null)
+        setCenteredColor(null)
+        setCenteredRandomly(false)
+        randomlyImageIndexRef.current = null
+      }
+      const checkVisible = (rowId: string) => {
+        const idx = rowIdToIndexRef.current.get(rowId)
+        return idx !== undefined && idx < visibleRowCountRef.current
+      }
       if (closestRow) {
         if (closestRow.id.startsWith('image-')) {
-          const index = parseInt(closestRow.id.replace('image-', ''))
-          setCenteredImageIndex(images[index]?.index ?? null)
-          setCenteredProjectIndex(null)
-          setCenteredColor(null)
-          setCenteredRandomly(false)
-          randomlyImageIndexRef.current = null
-        } else if (closestRow.id.startsWith('project-')) {
-          const projectIndex = parseInt(closestRow.id.replace('project-', ''))
-          const project = projects[projectIndex]
-          if (project?.images?.some(img => img?.asset)) {
-            setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
-            setCenteredImageIndex(null)
+          if (!checkVisible(closestRow.id)) {
+            clearCentered()
+          } else {
+            const index = parseInt(closestRow.id.replace('image-', ''))
+            setCenteredImageIndex(images[index]?.index ?? null)
+            setCenteredProjectIndex(null)
             setCenteredColor(null)
             setCenteredRandomly(false)
             randomlyImageIndexRef.current = null
+          }
+        } else if (closestRow.id.startsWith('project-')) {
+          if (!checkVisible(closestRow.id)) {
+            clearCentered()
           } else {
-            setCenteredProjectIndex(null)
+            const projectIndex = parseInt(closestRow.id.replace('project-', ''))
+            const project = projects[projectIndex]
+            if (project?.images?.some(img => img?.asset)) {
+              setCenteredProjectIndex({ projectIndex, imageIndex: 0 })
+              setCenteredImageIndex(null)
+              setCenteredColor(null)
+              setCenteredRandomly(false)
+              randomlyImageIndexRef.current = null
+            } else {
+              clearCentered()
+            }
           }
         } else {
-          setCenteredImageIndex(null)
-          setCenteredProjectIndex(null)
-          setCenteredColor(null)
-          setCenteredRandomly(false)
-          randomlyImageIndexRef.current = null
+          clearCentered()
         }
       }
     }
@@ -461,7 +512,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, images, projects, colors.length])
+  }, [isMobile, images, projects, colors.length, visibleRowCount])
 
   const getRandomImageForColor = (colorKey: string): ImageItem | null => {
     const colorGroup = imagesByColor[colorKey]
@@ -807,7 +858,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         <div className={`about-spacing ${isRowVisible('about-spacing') ? 'row-visible' : 'row-hidden'}`}></div>
         <div 
           ref={(el) => { if (el) rowRefs.current.set('about', el) }}
-          className={`about-row ${isRowVisible('about') ? 'row-visible' : 'row-hidden'}`}
+          className="about-row"
         >
           <button
             className="about-toggle"
@@ -815,92 +866,121 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
           >
             {(expandedAbout || isMobile) ? (
               <div className="about-content">
-                {aboutLines.map((line, idx) => {
-                  if (line.type === 'spacing') {
-                    return <div key={idx} className="about-line-spacing" />
-                  }
-                  const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''}`
-                  if (line.type === 'link') {
-                    const isInternal = line.url.startsWith('/')
-                    const isPdf = !isInternal && line.url.toLowerCase().includes('.pdf')
-                    const href = isPdf ? `${line.url}?dl` : line.url
-                    return (
-                      <div key={idx} className={lineClass}>
-                        <a
-                          href={href}
-                          {...(isInternal ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
-                          className="about-link"
-                        >
-                          {line.content}
-                        </a>
-                      </div>
-                    )
-                  }
-                  if (line.type === 'email') {
-                    return (
-                      <div key={idx} className={lineClass}>
-                        <a href={`mailto:${line.content}`} className="about-link">
-                          {line.content}
-                        </a>
-                      </div>
-                    )
-                  }
-                  if (line.type === 'phone') {
-                    return (
-                      <div key={idx} className={lineClass}>
-                        <a href={`tel:${line.content.replace(/^M:\s*/i, '').replace(/\s/g, '')}`} className="about-link">
-                          {line.content}
-                        </a>
-                      </div>
-                    )
-                  }
-                  if (line.type === 'publication') {
-                    const outletParts = line.outlets.map((o, i) =>
-                      o.url ? (
-                        <span key={i}>
-                          {i > 0 && ', '}
-                          <a href={o.url} target="_blank" rel="noopener noreferrer" className="about-link">{o.title}</a>
-                        </span>
-                      ) : (
-                        <span key={i}>{i > 0 ? ', ' : ''}{o.title}</span>
+                {(() => {
+                  const rows: ReactNode[] = []
+                  let aboutStep = 0
+                  aboutLines.forEach((line, idx) => {
+                    if (idx === 0 && line.type === 'text') {
+                      const visual = bioVisualLines.length > 0 ? bioVisualLines : [line.content]
+                      visual.forEach((text, j) => {
+                        const step = aboutStep++
+                        const lineVisible = isRowVisible(`about-line-${step}`) ? 'row-visible' : 'row-hidden'
+                        rows.push(
+                          <div
+                            key={`bio-${j}`}
+                            className={`about-line about-line-nowrap ${j < visual.length - 1 ? 'about-line-bio-continued' : ''} ${lineVisible}`}
+                          >
+                            {text}
+                          </div>
+                        )
+                      })
+                      return
+                    }
+                    const step = aboutStep++
+                    const lineVisible = isRowVisible(`about-line-${step}`) ? 'row-visible' : 'row-hidden'
+                    if (line.type === 'spacing') {
+                      rows.push(<div key={idx} className={`about-line-spacing ${lineVisible}`} />)
+                      return
+                    }
+                    const lineClass = `about-line ${line.tight ? 'about-line-tight' : ''} ${lineVisible}`
+                    if (line.type === 'link') {
+                      const isInternal = line.url.startsWith('/')
+                      const isPdf = !isInternal && line.url.toLowerCase().includes('.pdf')
+                      const href = isPdf ? `${line.url}?dl` : line.url
+                      rows.push(
+                        <div key={idx} className={lineClass}>
+                          <a
+                            href={href}
+                            {...(isInternal ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
+                            className="about-link"
+                          >
+                            {line.content}
+                          </a>
+                        </div>
                       )
-                    )
-                    return (
+                      return
+                    }
+                    if (line.type === 'email') {
+                      rows.push(
+                        <div key={idx} className={lineClass}>
+                          <a href={`mailto:${line.content}`} className="about-link">
+                            {line.content}
+                          </a>
+                        </div>
+                      )
+                      return
+                    }
+                    if (line.type === 'phone') {
+                      rows.push(
+                        <div key={idx} className={lineClass}>
+                          <a href={`tel:${line.content.replace(/^M:\s*/i, '').replace(/\s/g, '')}`} className="about-link">
+                            {line.content}
+                          </a>
+                        </div>
+                      )
+                      return
+                    }
+                    if (line.type === 'publication') {
+                      const outletParts = line.outlets.map((o, i) =>
+                        o.url ? (
+                          <span key={i}>
+                            {i > 0 && ', '}
+                            <a href={o.url} target="_blank" rel="noopener noreferrer" className="about-link">{o.title}</a>
+                          </span>
+                        ) : (
+                          <span key={i}>{i > 0 ? ', ' : ''}{o.title}</span>
+                        )
+                      )
+                      rows.push(
+                        <div key={idx} className={lineClass}>
+                          {outletParts}
+                          {line.projectTitle && ` - ${line.projectTitle}`}
+                        </div>
+                      )
+                      return
+                    }
+                    if (line.type === 'exhibition') {
+                      const hasReviewLinks = line.reviewLinks.length > 0
+                      rows.push(
+                        <div key={idx} className={lineClass}>
+                          {line.title}
+                          {hasReviewLinks && (
+                            <> - Review on {line.reviewLinks.map((r, i) =>
+                              r.url ? (
+                                <span key={i}>
+                                  {i > 0 && ', '}
+                                  <a href={r.url} target="_blank" rel="noopener noreferrer" className="about-link">{r.title}</a>
+                                </span>
+                              ) : (
+                                <span key={i}>{i > 0 ? ', ' : ''}{r.title}</span>
+                              )
+                            )}</>
+                          )}
+                        </div>
+                      )
+                      return
+                    }
+                    rows.push(
                       <div key={idx} className={lineClass}>
-                        {outletParts}
-                        {line.projectTitle && ` - ${line.projectTitle}`}
+                        {line.content}
                       </div>
                     )
-                  }
-                  if (line.type === 'exhibition') {
-                    const hasReviewLinks = line.reviewLinks.length > 0
-                    return (
-                      <div key={idx} className={lineClass}>
-                        {line.title}
-                        {hasReviewLinks && (
-                          <> - Review on {line.reviewLinks.map((r, i) =>
-                            r.url ? (
-                              <span key={i}>
-                                {i > 0 && ', '}
-                                <a href={r.url} target="_blank" rel="noopener noreferrer" className="about-link">{r.title}</a>
-                              </span>
-                            ) : (
-                              <span key={i}>{i > 0 ? ', ' : ''}{r.title}</span>
-                            )
-                          )}</>
-                        )}
-                      </div>
-                    )
-                  }
-                  return (
-                    <div key={idx} className={lineClass}>
-                      {line.content}
-                    </div>
-                  )
-                })}
+                  })
+                  return rows
+                })()}
               </div>
             ) : (
-              <span>+</span>
+              <span className={isRowVisible('about-line-0') ? 'row-visible' : 'row-hidden'}>+</span>
             )}
           </button>
         </div>
@@ -914,7 +994,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         return (
           <div className="image-preview-overlay">
             <img
-              src={urlFor(image.asset).width(2000).url()}
+              src={previewImageUrl(image.asset)}
               alt={image.title || extractTitleFromFilename(image.asset, image.assetMetadata) || `Image ${imageIndex}`}
               className="image-preview"
             />
@@ -934,7 +1014,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
                 {validImages.map((image, imgIndex) => (
                   <div key={imgIndex} className="project-slider-item">
                     <img
-                      src={urlFor(image.asset).width(2000).url()}
+                      src={previewImageUrl(image.asset)}
                       alt={project.title || `Project ${centeredProjectIndex.projectIndex + 1} Image ${imgIndex + 1}`}
                       className="project-slider-image"
                     />
@@ -955,7 +1035,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
          return (
            <div className="image-preview-overlay">
              <img
-               src={urlFor(image.asset).width(2000).url()}
+               src={previewImageUrl(image.asset)}
                alt={project.title || `Project ${hoveredProjectIndex! + 1} Image ${hoveredProjectImageIndex! + 1}`}
                className="image-preview"
              />
@@ -973,7 +1053,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         return (
           <div className="image-preview-overlay">
             <img
-              src={urlFor(randomImage.asset).width(2000).url()}
+              src={previewImageUrl(randomImage.asset)}
               alt={
                 randomImage.title ||
                 extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) ||
@@ -995,7 +1075,7 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         return (
           <div className="image-preview-overlay">
             <img
-              src={urlFor(randomImage.asset).width(2000).url()}
+              src={previewImageUrl(randomImage.asset)}
               alt={randomImage.title || extractTitleFromFilename(randomImage.asset, randomImage.assetMetadata) || 'Random Image'}
               className="image-preview"
             />
@@ -1077,8 +1157,12 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         .image-title {
           position: absolute;
           left: 30px;
+          right: 5ch;
           text-align: left;
           z-index: 10;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         .image-year {
@@ -1178,6 +1262,14 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
           line-height: 130%;
           margin-bottom: calc(1em * 1.3);
         }
+
+        .about-line-nowrap {
+          white-space: nowrap;
+        }
+
+        .about-line-bio-continued {
+          margin-bottom: 0;
+        }
         
         .about-line-tight {
           margin-bottom: 0;
@@ -1233,9 +1325,13 @@ export default function ImageList({ images, projects, aboutLines }: ImageListPro
         .project-title {
           position: absolute;
           left: 30px;
+          right: 5ch;
           text-align: left;
           z-index: 10;
           pointer-events: none;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         .project-year {

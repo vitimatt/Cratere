@@ -93,23 +93,34 @@ export async function getSiteSettings(): Promise<SiteSettings | null> {
   return settings
 }
 
-export function buildAboutLines(settings: SiteSettings | null): AboutLine[] {
-  const bio = settings?.bioDescription || DEFAULT_BIO
+export function getStudioIntro(settings: SiteSettings | null) {
+  return {
+    bio: settings?.bioDescription || DEFAULT_BIO,
+    email: settings?.studioEmail ?? 'studio@cratere.studio',
+    phone: settings?.studioPhone ?? 'M: +39 3208740367',
+  }
+}
+
+export function buildAboutLines(settings: SiteSettings | null, options?: { omitStudioIntro?: boolean }): AboutLine[] {
+  const { bio, email: studioEmail, phone: studioPhone } = getStudioIntro(settings)
+  const omitStudioIntro = options?.omitStudioIntro ?? false
   const portfolioPdf = settings?.portfolioPdf?.asset?.url
   const publications = settings?.publications?.length ? settings.publications : DEFAULT_PUBLICATIONS
   const exhibitions = settings?.exhibitions?.length ? settings.exhibitions : DEFAULT_EXHIBITIONS
   const commissions = settings?.commissions ?? 'Represented by C41.eu'
   const commissionsUrl = settings?.commissionsUrl
-  const studioEmail = settings?.studioEmail ?? 'studio@cratere.studio'
-  const studioPhone = settings?.studioPhone ?? 'M: +39 3208740367'
   const contactEmail = settings?.contactEmail ?? 'contact@cratere.studio'
   const address = settings?.address ?? 'Viale Abruzzi 32'
   const websiteLabel = settings?.websiteLabel ?? 'Matteo Viti'
   const websiteUrl = settings?.websiteUrl
 
   const lines: AboutLine[] = [
-    { type: 'text', content: bio, tight: false },
-    { type: 'spacing' },
+    ...(omitStudioIntro
+      ? []
+      : [
+          { type: 'text' as const, content: bio, tight: false },
+          { type: 'spacing' as const },
+        ]),
     portfolioPdf
       ? { type: 'link', content: 'Download portfolio', url: '/portfolio', tight: false }
       : { type: 'text', content: 'Download portfolio', tight: false },
@@ -134,9 +145,13 @@ export function buildAboutLines(settings: SiteSettings | null): AboutLine[] {
     commissionsUrl
       ? { type: 'link' as const, content: commissions, url: commissionsUrl, tight: true }
       : { type: 'text' as const, content: commissions, tight: true },
-    { type: 'spacing' },
-    { type: 'email', content: studioEmail, tight: true },
-    { type: 'phone', content: studioPhone, tight: true },
+    ...(omitStudioIntro
+      ? []
+      : [
+          { type: 'spacing' as const },
+          { type: 'email' as const, content: studioEmail, tight: true },
+          { type: 'phone' as const, content: studioPhone, tight: true },
+        ]),
     { type: 'spacing' },
     { type: 'text', content: 'General Info', tight: true },
     { type: 'email', content: contactEmail, tight: true },
